@@ -1,0 +1,8 @@
+{
+  "name": "yanyuan-world-api",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.28.2",
+  "scripts": { "build": "node build.mjs", "test": "node --test tests/api.test.mjs", "db:generate": "drizzle-kit generate" },
+  "devDependencies": { "drizzle-kit": "0.31.10", "drizzle-orm": "0.45.2" }
+}

@@ -1,0 +1,7 @@
+{
+  "name": "yanyuan-game",
+  "private": true,
+  "type": "module",
+  "description": "像素燕园：多人在线像素校园（静态前端，无构建步骤）",
+  "license": "SEE LICENSE IN ../LICENSE"
+}
