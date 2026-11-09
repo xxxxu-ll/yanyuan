@@ -162,8 +162,8 @@ export class Game {
     this.canvas.height = Math.round(h * this.dpr);
     this.cssW = w; this.cssH = h;
     // 低分辨率缓冲：CSS 尺寸的一半，最后 2 倍最近邻放大
-    this.low.width = Math.ceil(w / UPSCALE);
-    this.low.height = Math.ceil(h / UPSCALE);
+    this.low.width = Math.max(2, Math.floor(w / UPSCALE / 2) * 2);
+    this.low.height = Math.max(2, Math.floor(h / UPSCALE / 2) * 2);
     this.lowFactor = w / this.low.width;
     this.cam.updateSize(this.low.width, this.low.height);
     this.cam.zoom = 1;
@@ -461,6 +461,10 @@ export class Game {
     const targetY = me.y - 1.2 + (me.dir === 'up' ? -1.4 : 0);
     this.cam.x += (targetX - this.cam.x) * Math.min(1, dt * 7);
     this.cam.y += (targetY - this.cam.y) * Math.min(1, dt * 7);
+    // 像素对齐：镜头落在整数低分辨率像素上，各层不会互相差 1 像素地抖
+    const qs = this.cam.scale;
+    this.cam.x = Math.round(this.cam.x * qs) / qs;
+    this.cam.y = Math.round(this.cam.y * qs) / qs;
 
     // 猫：有作息，不在时段内的不出现、不可互动
     const hourNow = this.nowHour();
