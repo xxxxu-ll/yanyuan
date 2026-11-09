@@ -106,6 +106,7 @@
           <p id="pcBio"></p>
           <div class="pc-actions">
             <button class="primarybtn" id="pcWave">挥挥手</button>
+            <button class="ghostbtn" id="pcPhoto">跟他合影</button>
             <button class="ghostbtn" id="pcFollow">跟他走一段</button>
           </div>
           <p class="muted small" id="pcHint"></p>
@@ -200,6 +201,10 @@
       <h1 class="logo">像素燕园<span>YANYUAN</span></h1>
       <p class="tagline">在未名湖边散步，认识一只猫，或者遇见一个朋友。</p>
       <div id="startStatus" class="start-status">正在连接世界…</div>
+      <div class="start-retry hidden" id="startRetry">
+        <button class="ghostbtn" id="btnRetryWorld">重新连接</button>
+        <span class="small muted" id="retryHint"></span>
+      </div>
       <div class="start-actions">
         <button class="primarybtn" id="btnCreate">创建角色</button>
         <button class="ghostbtn" id="btnRestore">用恢复码登录</button>

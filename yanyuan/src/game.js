@@ -1,7 +1,7 @@
 // 游戏主循环：移动、碰撞、镜头、多人同步、互动、地图、拍照
 import { Camera, Ground, drawBuilding, drawLandmark, drawTree, drawWaterAnim, drawTint, drawLabel, drawNightLights, UPSCALE } from './render.js';
 import { getCharacterSheet, drawCharacter, getCatSheet, drawCat, drawNameTag } from './sprites.js';
-import { CAT_DEFS, Cat, AFF, affinityLabel } from './cats.js';
+import { CAT_DEFS, Cat, AFF, affinityLabel, catAwake } from './cats.js';
 import {
   normalizeProgress, discoverNearby, evaluateAchievements, exploreCount,
   catState, bumpCat, setCatFollowing, addItem, ProgressStore,
@@ -354,6 +354,15 @@ export class Game {
       ui.hidePlayerCard();
       ui.toast(`跟着 ${r.name} 走，屏幕上会持续标出他的位置`, 'good', 3200);
     };
+    document.getElementById('pcPhoto').onclick = () => {
+      const id = document.getElementById('cardOverlay').dataset.id;
+      const r = this.remotes.get(id);
+      ui.hidePlayerCard();
+      if (!r) return;
+      const d = dist(this.me.x, this.me.y, r.x, r.y);
+      if (d > 8) { ui.toast('离得太远了，走近一点再合影', 'warn'); return; }
+      this.takePhoto({ withName: r.name });
+    };
 
     const chatInput = ui.el.chatInput;
     chatInput.addEventListener('keydown', (e) => {
@@ -373,6 +382,12 @@ export class Game {
   loop(now) {
     if (!this.running) return;
     requestAnimationFrame((t) => this.loop(t));
+    // 显示器缩放/浏览器缩放变化时重建缓冲
+    if (Math.abs((window.devicePixelRatio || 1) - this.dpr) > 0.01 ||
+        Math.abs(window.innerWidth - this.cssW) > 1 ||
+        Math.abs(window.innerHeight - this.cssH) > 1) {
+      this.resize();
+    }
     const dtRaw = (now - this.lastFrame) / 1000;
     this.lastFrame = now;
     if (this.paused) return;
@@ -447,8 +462,12 @@ export class Game {
     this.cam.x += (targetX - this.cam.x) * Math.min(1, dt * 7);
     this.cam.y += (targetY - this.cam.y) * Math.min(1, dt * 7);
 
-    // 猫
-    for (const c of this.cats) c.update(dt, this.me);
+    // 猫：有作息，不在时段内的不出现、不可互动
+    const hourNow = this.nowHour();
+    for (const c of this.cats) {
+      c.awake = catAwake(c.def, hourNow);
+      if (c.awake) c.update(dt, this.me);
+    }
 
     // 远端玩家插值
     for (const [id, r] of this.remotes) {
@@ -530,6 +549,17 @@ export class Game {
     }
   }
 
+  /** 陪走型的猫更容易愿意跟着你 */
+  followAt(c) {
+    return c.def.habit === 'companion' ? 25 : AFF.follow;
+  }
+
+  nowHour() {
+    if (this.hourOverride != null) return this.hourOverride;
+    const d = new Date();
+    return d.getHours() + d.getMinutes() / 60;
+  }
+
   checkAchievements() {
     const now = new Date();
     const ctx = { hour: now.getHours(), world: this.world, player: this.me };
@@ -550,6 +580,7 @@ export class Game {
     const me = this.me;
     let best = null, bd = INTERACT_R;
     for (const c of this.cats) {
+      if (c.awake === false) continue;
       const d = dist(me.x, me.y, c.x, c.y);
       if (d < bd) {
         const st = catState(this.progress, c.id);
@@ -557,7 +588,7 @@ export class Game {
         bd = d;
         best = {
           type: 'cat', cat: c,
-          prompt: following ? `让 ${c.name} 自己走走（E）` : (st.a >= AFF.follow ? `和 ${c.name} 一起走走（E）` : `摸摸 ${c.name}（E）`),
+          prompt: following ? `让 ${c.name} 自己走走（E）` : (st.a >= this.followAt(c) ? `和 ${c.name} 一起走走（E）` : `摸摸 ${c.name}（E）`),
         };
       }
     }
@@ -590,7 +621,7 @@ export class Game {
       const c = this.nearest.cat;
       const st = catState(this.progress, c.id);
       const now = Date.now();
-      if (st.a >= AFF.follow) {
+      if (st.a >= this.followAt(c)) {
         setCatFollowing(this.progress, c.id, !st.f);
         c.following = !st.f;
         ui.toast(st.f ? `${c.name} 停下来看着你走开` : `${c.name} 决定跟着你走`, st.f ? '' : 'good');
@@ -598,7 +629,18 @@ export class Game {
       }
       if (now - c.petAt > 5000) {
         c.petAt = now;
-        const gain = st.a < 35 ? 8 : 5;
+        const habit = c.def.habit;
+        // 怕生的猫：短时间内重复打扰只会敷衍你
+        if (habit === 'distant' && st.t && now - st.t < 5 * 60 * 1000) {
+          bumpCat(this.progress, c.id, 1);
+          ui.toast(c.name + ' 还记得你刚来过，只是抬眼看了看你', '', 3000);
+          this.store.touch();
+          return;
+        }
+        // 睡着被摸醒：涨幅小
+        const asleep = habit === 'sleepy' && c.pose === 'sleep';
+        let gain = st.a < 35 ? 8 : 5;
+        if (asleep) gain = 3;
         const next = bumpCat(this.progress, c.id, gain);
         const line = c.def.lines[Math.floor(Math.random() * c.def.lines.length)];
         ui.toast(line, '', 3000);
@@ -693,6 +735,7 @@ export class Game {
       items.push({ y: t.y, k: 't', o: t });
     }
     for (const c of this.cats) {
+      if (c.awake === false) continue;
       if (c.x < view[0] - 2 || c.x > view[2] + 2 || c.y < view[1] - 2 || c.y > view[3] + 2) continue;
       items.push({ y: c.y, k: 'c', o: c });
     }
@@ -730,9 +773,11 @@ export class Game {
     drawNightLights(g, this.world, cam, hour);
 
     // 整数倍放大到屏幕（最近邻，像素块清晰）
+    // 注意：这里必须铺满 canvas 的设备像素，而不是 low.width*2 ——
+    // 在 devicePixelRatio>1（Windows 125%/150% 缩放、手机）时否则只画左上一块
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(this.low, 0, 0, this.low.width * UPSCALE, this.low.height * UPSCALE);
+    ctx.drawImage(this.low, 0, 0, this.canvas.width, this.canvas.height);
 
     // 高清文字层（建筑名、玩家名牌、目的地距离）
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
@@ -746,14 +791,7 @@ export class Game {
   py(y) { return this.cam.sy(y) * this.lowFactor; }
 
   heroKind(b) {
-    if (b._hero !== undefined) return b._hero;
-    let k = null;
-    if (b.name === '博雅塔') k = 'boya';
-    else if (b.name === '北京大学图书馆') k = 'library';
-    else if (b.name === '百周年纪念讲堂') k = 'podium';
-    else if (b.name === '北大西门' || (b.cat === '校门' && /西门/.test(b.name))) k = 'westgate';
-    b._hero = k;
-    return k;
+    return b.hero || null;
   }
 
   flushText(ctx) {
@@ -1237,7 +1275,7 @@ export class Game {
   }
 
   // ---------------- 拍照 ----------------
-  async takePhoto() {
+  async takePhoto(opts = {}) {
     if (this.photoBusy) return;
     this.photoBusy = true;
     this.photoMode = true;
@@ -1249,10 +1287,12 @@ export class Game {
       const nearCat = this.cats
         .filter(c => dist(c.x, c.y, this.me.x, this.me.y) < 4)
         .sort((a, b) => dist(a.x, a.y, this.me.x, this.me.y) - dist(b.x, b.y, this.me.x, this.me.y))[0];
+      const withName = opts.withName || (nearCat ? null : null);
       const out = capturePhoto(this.canvas, {
         place: here ? here.name : '燕园',
         name: this.character.name,
         cat: nearCat ? nearCat.name : null,
+        withName: opts.withName || null,
       });
       const ts = new Date();
       const fname = `yanyuan-${ts.getFullYear()}${String(ts.getMonth() + 1).padStart(2, '0')}${String(ts.getDate()).padStart(2, '0')}-${String(ts.getHours()).padStart(2, '0')}${String(ts.getMinutes()).padStart(2, '0')}${String(ts.getSeconds()).padStart(2, '0')}.png`;

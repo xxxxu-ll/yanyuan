@@ -83,9 +83,9 @@ export class Ground {
     this.cache = new Map();
     this.maxCache = 90;
     this.pattern = null;
-    // 建筑周边铺装环（提前算好，避免每块重复判断）
+    // 建筑周边铺装（立面地标不铺，避免地面留空框）
     this.aprons = world.buildings
-      .filter(b => b.area > 60)
+      .filter(b => b.area > 60 && !b.hero)
       .map(b => ({ bbox: b.bbox, polys: b.polys }));
   }
 
@@ -147,6 +147,16 @@ export class Ground {
     g.fillRect(-24, -24, this.chunkPx + 48, this.chunkPx + 48);
     g.restore();
 
+    // 草地大块色差（远看有层次，近看仍是像素颗粒）
+    const grng = mulberry32((cx * 7919) ^ (cy * 104729));
+    for (let i = 0; i < 4; i++) {
+      g.fillStyle = i % 2 ? 'rgba(214,236,160,.06)' : 'rgba(46,82,26,.06)';
+      g.beginPath();
+      g.ellipse(w0 + grng() * this.chunkM, h0 + grng() * this.chunkM,
+        7 + grng() * 15, 5 + grng() * 11, grng() * 3.14, 0, Math.PI * 2);
+      g.fill();
+    }
+
     // 绿地（更深的草坪）
     for (const lc of this.world.landcover) {
       if (!hit(lc.bbox, x0, y0, x1, y1)) continue;
@@ -189,16 +199,16 @@ export class Ground {
       .sort((a, b) => b.w - a.w);
     for (const r of roads) drawRoad(g, r);
 
-    // 建筑周边铺装
+    // 建筑周边铺装：窄一圈，颜色压暗，避免变成画框
     for (const a of this.aprons) {
       if (!hit(a.bbox, x0 - 4, y0 - 4, x1 + 4, y1 + 4)) continue;
       g.beginPath();
       for (const p of a.polys) for (const ring of p) poly(g, ring);
-      g.strokeStyle = P.plazaDark;
-      g.lineWidth = 2.2;
+      g.strokeStyle = 'rgba(150,140,118,.55)';
+      g.lineWidth = 1.6;
       g.stroke();
-      g.strokeStyle = P.plaza;
-      g.lineWidth = 1.4;
+      g.strokeStyle = 'rgba(120,112,94,.28)';
+      g.lineWidth = 0.9;
       g.stroke();
     }
 
@@ -405,9 +415,20 @@ export function prepareBuilding(b) {
   b._path = path;
   b._style = buildingStyle(b);
   // 视觉高度（低分辨率像素）
-  b._hpx = clamp(Math.round(Math.sqrt(Math.max(3, b.h)) * 2.7), 5, 19);
+  b._hpx = clamp(Math.round(Math.sqrt(Math.max(3, b.h)) * 4.4), 8, 30);
   return b;
 }
+
+// 各类建筑用 3 组屋顶色，同类别也有变化
+const ROOF_VARIANTS = {
+  '教学': [['#8d8779', '#635c50'], ['#958f80', '#6a6456'], ['#867f71', '#5b544a']],
+  '生活': [['#9c6151', '#74483a'], ['#a56a58', '#7c5040'], ['#925847', '#6b4235']],
+  '食堂': [['#b28b5b', '#8a6938'], ['#bb9666', '#93713f'], ['#a98252', '#806031']],
+  '园林': [['#5f7266', '#46564b'], ['#68796c', '#4b5b50'], ['#566a5e', '#3f4f45']],
+  '体育': [['#7c848c', '#5a626a'], ['#848c94', '#606870'], ['#747c84', '#535b63']],
+  '校园服务': [['#8d8779', '#635c50'], ['#958f80', '#6a6456'], ['#867f71', '#5b544a']],
+  '校门': [['#4f5a63', '#39434b'], ['#4f5a63', '#39434b'], ['#4f5a63', '#39434b']],
+};
 
 export function drawBuilding(ctx, b, cam, hour) {
   prepareBuilding(b);
@@ -418,27 +439,29 @@ export function drawBuilding(ctx, b, cam, hour) {
   const hpx = b._hpx;
   const st = b._style;
   const bb = b.bbox;
-  // 每栋楼轻微色差，避免整排一模一样
-  const tint = ((b.id | 0) % 7) / 7 - 0.5;
-  const roof = mixHex(st.roof, tint > 0 ? '#ffffff' : '#000000', Math.abs(tint) * 0.08);
-  const roofDark = mixHex(st.roofDark, '#000000', 0.05);
+  const w = bb[2] - bb[0], h = bb[3] - bb[1];
+  const seed = (b.id | 0) || 1;
+  const variants = ROOF_VARIANTS[b.cat] || ROOF_VARIANTS['教学'];
+  const [roof, roofDark] = variants[seed % variants.length];
+  const night = nightStrength(hour) > 0.15;
+  const rng = mulberry32(seed * 131 + 7);
 
-  // 地面投影（向右下，硬边，带一层浅晕）
+  // 地面投影（两层，近实远虚）
   ctx.save();
-  at(hpx * 0.20 + 2, hpx * 0.45 + 3);
-  ctx.fillStyle = 'rgba(34,44,30,.20)';
+  at(hpx * 0.22 + 2, hpx * 0.5 + 3);
+  ctx.fillStyle = 'rgba(34,44,30,.18)';
   ctx.fill(b._path);
   ctx.restore();
   ctx.save();
-  at(hpx * 0.10 + 1, hpx * 0.22 + 1.5);
-  ctx.fillStyle = 'rgba(34,44,30,.16)';
+  at(hpx * 0.1 + 1, hpx * 0.24 + 1.5);
+  ctx.fillStyle = 'rgba(34,44,30,.20)';
   ctx.fill(b._path);
   ctx.restore();
 
   // 东侧立面
   ctx.save();
-  at(1.6, hpx);
-  ctx.fillStyle = 'rgba(26,30,24,.34)';
+  at(1.8, hpx);
+  ctx.fillStyle = 'rgba(24,28,22,.36)';
   ctx.fill(b._path);
   ctx.restore();
 
@@ -451,33 +474,42 @@ export function drawBuilding(ctx, b, cam, hour) {
   ctx.clip(b._path);
   const wallTop = bb[3] - hpx;
   // 檐下阴影
-  ctx.fillStyle = 'rgba(28,32,26,.30)';
-  ctx.fillRect(bb[0], wallTop, bb[2] - bb[0], Math.min(2.0, hpx * 0.42));
-  // 窗（横向窗带 + 竖向窗间墙）
-  const rng = mulberry32((b.id | 0) * 37 + 11);
+  ctx.fillStyle = 'rgba(26,30,24,.34)';
+  ctx.fillRect(bb[0], wallTop, w, Math.min(2.2, hpx * 0.45));
+  // 立面竖向渐变（上暗下亮），用几条横带近似
+  for (let i = 0; i < 3; i++) {
+    ctx.fillStyle = `rgba(255,250,235,${0.05 - i * 0.015})`;
+    ctx.fillRect(bb[0], wallTop + hpx * (0.45 + i * 0.18), w, hpx * 0.16);
+  }
+  // 窗
   const rows = hpx >= 16 ? 2 : 1;
   const winH = Math.max(1.6, Math.min(2.8, hpx * 0.32));
-  const night = nightStrength(hour) > 0.15;
   for (let r = 0; r < rows; r++) {
-    const y = bb[3] - 1.2 - (r + 1) * (hpx / (rows + 0.6)) + 0.8;
+    const y = bb[3] - 1.2 - (r + 1) * (hpx / (rows + 0.6)) + 0.9;
     for (let x = bb[0] + 1.1; x < bb[2] - 1.1; x += 2.4) {
       const q = rng();
-      if (q < 0.16) continue;
+      if (q < 0.14) continue;
       const lit = night && q > 0.55;
-      ctx.fillStyle = lit ? '#f7dd9c' : 'rgba(48,62,70,.62)';
+      ctx.fillStyle = lit ? '#f7dd9c' : 'rgba(46,60,68,.6)';
       ctx.fillRect(x, y, 1.4, winH);
-      ctx.fillStyle = lit ? 'rgba(255,240,190,.5)' : 'rgba(232,226,208,.55)';
-      ctx.fillRect(x, y + winH, 1.2, 0.35);
+      ctx.fillStyle = lit ? 'rgba(255,236,180,.55)' : 'rgba(226,220,202,.6)';
+      ctx.fillRect(x - 0.1, y + winH, 1.6, 0.35);
     }
   }
-  // 竖向壁柱
-  ctx.fillStyle = 'rgba(48,50,42,.14)';
-  for (let x = bb[0] + 3.4; x < bb[2] - 2; x += 4.2) {
-    ctx.fillRect(x, wallTop + 0.6, 0.5, hpx - 1.2);
+  // 主入口雨篷（较大的楼给一个）
+  if (b.area > 300 && w > 10) {
+    const ew = Math.min(7, w * 0.26);
+    const ex = bb[0] + (w - ew) / 2;
+    ctx.fillStyle = 'rgba(30,32,26,.35)';
+    ctx.fillRect(ex + 0.4, bb[3] - 0.4, ew, 1.0);
+    ctx.fillStyle = '#dfd7c2';
+    ctx.fillRect(ex, bb[3] - 1.4, ew, 1.0);
+    ctx.fillStyle = 'rgba(70,80,86,.5)';
+    ctx.fillRect(ex + ew * 0.4, bb[3] - 1.2, ew * 0.2, hpx * 0.5);
   }
   // 勒脚
-  ctx.fillStyle = 'rgba(30,32,26,.28)';
-  ctx.fillRect(bb[0], bb[3] - 0.7, bb[2] - bb[0], 0.7);
+  ctx.fillStyle = 'rgba(28,30,24,.32)';
+  ctx.fillRect(bb[0], bb[3] - 0.8, w, 0.8);
   ctx.restore();
   ctx.restore();
 
@@ -489,64 +521,120 @@ export function drawBuilding(ctx, b, cam, hour) {
   ctx.save();
   ctx.clip(b._path, 'evenodd');
 
+  // 檐口环（内压一圈深色）
+  ctx.strokeStyle = roofDark;
+  ctx.lineWidth = st.pitched ? 2.4 : 1.8;
+  ctx.stroke(b._path);
+
   if (st.pitched) {
-    // 棋盘纹理（大块平屋顶的像素质感）
-    ctx.fillStyle = 'rgba(24,30,28,.05)';
-    for (let y = bb[1]; y < bb[3]; y += 2) {
-      for (let x = bb[0]; x < bb[2]; x += 2) {
-        if (((Math.round(x) + Math.round(y)) & 2) === 0) ctx.fillRect(x, y, 1, 1);
-      }
+    const horiz = w >= h;
+    // 瓦垄：平行于正脊的细线，读起来像传统坡瓦
+    ctx.fillStyle = 'rgba(28,30,26,.10)';
+    if (horiz) {
+      for (let y = bb[1] + 1.2; y < bb[3]; y += 1.8) ctx.fillRect(bb[0], y, w, 0.32);
+    } else {
+      for (let x = bb[0] + 1.2; x < bb[2]; x += 1.8) ctx.fillRect(x, bb[1], 0.32, h);
     }
-    // 檐口环（在屋顶内压一圈深色，形成"坡面 + 檐"的关系）
-    ctx.strokeStyle = roofDark;
-    ctx.lineWidth = 2.2;
-    ctx.stroke(b._path);
-    // 正脊
-    const horiz = (bb[2] - bb[0]) >= (bb[3] - bb[1]);
-    ctx.fillStyle = 'rgba(24,28,26,.42)';
-    if (horiz) ctx.fillRect(bb[0], (bb[1] + bb[3]) / 2 - 0.5, bb[2] - bb[0], 1.0);
-    else ctx.fillRect((bb[0] + bb[2]) / 2 - 0.5, bb[1], 1.0, bb[3] - bb[1]);
-    // 受光坡面：脊线以北（或以西）略亮
-    ctx.fillStyle = 'rgba(255,250,235,.06)';
-    if (horiz) ctx.fillRect(bb[0], bb[1], bb[2] - bb[0], (bb[3] - bb[1]) / 2);
-    else ctx.fillRect(bb[0], bb[1], (bb[2] - bb[0]) / 2, bb[3] - bb[1]);
-    // 烟囱 / 通风口
-    const rng = mulberry32((b.id | 0) * 17 + 3);
-    const n = Math.min(3, Math.max(0, Math.round(b.area / 1100)));
-    for (let i = 0; i < n; i++) {
-      const ux = bb[0] + 3 + rng() * Math.max(1, bb[2] - bb[0] - 6);
-      const uy = bb[1] + 3 + rng() * Math.max(1, bb[3] - bb[1] - 6);
-      ctx.fillStyle = 'rgba(38,42,38,.4)';
-      ctx.fillRect(ux + 0.4, uy + 0.4, 1.6, 1.4);
-      ctx.fillStyle = 'rgba(214,209,196,.6)';
-      ctx.fillRect(ux, uy, 1.6, 0.7);
+    // 坡度分级：靠近屋脊更亮，靠近檐口更暗（三段硬边色阶）
+    const midY = (bb[1] + bb[3]) / 2, midX = (bb[0] + bb[2]) / 2;
+    if (horiz) {
+      const q = h / 4;
+      ctx.fillStyle = 'rgba(255,250,235,.06)';
+      ctx.fillRect(bb[0], midY - q, w, q);
+      ctx.fillStyle = 'rgba(22,26,24,.10)';
+      ctx.fillRect(bb[0], midY, w, q);
+      ctx.fillStyle = 'rgba(22,26,24,.20)';
+      ctx.fillRect(bb[0], midY + q, w, h - (midY - bb[1]) - q);
+    } else {
+      const q = w / 4;
+      ctx.fillStyle = 'rgba(255,250,235,.06)';
+      ctx.fillRect(midX - q, bb[1], q, h);
+      ctx.fillStyle = 'rgba(22,26,24,.10)';
+      ctx.fillRect(midX, bb[1], q, h);
+      ctx.fillStyle = 'rgba(22,26,24,.20)';
+      ctx.fillRect(midX + q, bb[1], w - (midX - bb[0]) - q, h);
     }
+    // 正脊 + 脊上高光
+    if (horiz) {
+      ctx.fillStyle = 'rgba(20,24,22,.55)';
+      ctx.fillRect(bb[0], (bb[1] + bb[3]) / 2 - 0.9, w, 1.8);
+      ctx.fillStyle = 'rgba(255,250,235,.22)';
+      ctx.fillRect(bb[0], (bb[1] + bb[3]) / 2 - 0.9, w, 0.5);
+    } else {
+      ctx.fillStyle = 'rgba(20,24,22,.55)';
+      ctx.fillRect((bb[0] + bb[2]) / 2 - 0.9, bb[1], 1.8, h);
+      ctx.fillStyle = 'rgba(255,250,235,.22)';
+      ctx.fillRect((bb[0] + bb[2]) / 2 - 0.9, bb[1], 0.5, h);
+    }
+
   } else {
-    // 平屋顶：女儿墙 + 设备
-    ctx.strokeStyle = roofDark;
-    ctx.lineWidth = 1.6;
+    // 平屋顶：女儿墙 + 天窗 + 设备
+    ctx.strokeStyle = 'rgba(255,250,235,.10)';
+    ctx.lineWidth = 0.8;
     ctx.stroke(b._path);
-    const rng = mulberry32((b.id | 0) * 131 + 7);
-    const w = bb[2] - bb[0], h = bb[3] - bb[1];
-    const n = Math.min(7, Math.max(1, Math.round(w * h / 420)));
-    for (let i = 0; i < n; i++) {
-      const uw = 1.2 + rng() * 2.6, uh = 1 + rng() * 2.2;
-      const ux = bb[0] + 1.4 + rng() * Math.max(1, w - uw - 2.8);
-      const uy = bb[1] + 1.4 + rng() * Math.max(1, h - uh - 2.8);
-      ctx.fillStyle = 'rgba(40,44,40,.35)';
-      ctx.fillRect(ux + 0.3, uy + 0.3, uw, uh);
-      ctx.fillStyle = 'rgba(226,222,208,.55)';
-      ctx.fillRect(ux, uy, uw, uh * 0.5);
+    if (w > 12 && h > 8) {
+      ctx.fillStyle = 'rgba(150,196,214,.42)';
+      ctx.fillRect(bb[0] + w * 0.28, bb[1] + h * 0.2, Math.min(9, w * 0.3), Math.min(2.8, h * 0.1));
+      ctx.fillStyle = 'rgba(240,250,255,.35)';
+      ctx.fillRect(bb[0] + w * 0.28, bb[1] + h * 0.2, Math.min(9, w * 0.3), 0.5);
     }
-    if (w > 14 && h > 10) {
-      ctx.fillStyle = 'rgba(150,196,214,.45)';
-      ctx.fillRect(bb[0] + w * 0.3, bb[1] + h * 0.22, Math.min(6, w * 0.2), Math.min(2.4, h * 0.08));
+    const n = Math.min(6, Math.max(1, Math.round(w * h / 500)));
+    for (let i = 0; i < n; i++) {
+      const uw = 1.6 + rng() * 2.6, uh = 1.4 + rng() * 2.2;
+      const ux = bb[0] + 1.6 + rng() * Math.max(1, w - uw - 3);
+      const uy = bb[1] + 1.6 + rng() * Math.max(1, h - uh - 3);
+      ctx.fillStyle = 'rgba(38,42,38,.4)';
+      ctx.fillRect(ux + 0.4, uy + 0.4, uw, uh);
+      ctx.fillStyle = 'rgba(222,218,204,.6)';
+      ctx.fillRect(ux, uy, uw, uh * 0.55);
+      ctx.fillStyle = 'rgba(255,250,235,.3)';
+      ctx.fillRect(ux, uy, uw, 0.4);
+    }
+  }
+
+  // 屋顶烟囱/通风口（坡顶也有）
+  if (st.pitched) {
+    const n2 = Math.min(3, Math.max(1, Math.round(b.area / 1100)));
+    for (let i = 0; i < n2; i++) {
+      const uw = 1.4, uh = 1.2;
+      const ux = bb[0] + 2 + rng() * Math.max(1, w - 4);
+      const uy = bb[1] + 2 + rng() * Math.max(1, h - 4);
+      ctx.fillStyle = 'rgba(30,34,30,.35)';
+      ctx.fillRect(ux + 0.4, uy + 0.4, uw, uh);
+      ctx.fillStyle = 'rgba(226,222,208,.7)';
+      ctx.fillRect(ux, uy, uw, uh);
+      ctx.fillStyle = 'rgba(120,118,108,.6)';
+      ctx.fillRect(ux + 0.3, uy + 0.3, uw - 0.6, uh - 0.6);
     }
   }
   ctx.restore();
+
+  // 内院（有洞的楼：铺装 + 一圈阴影）
+  for (const poly of b.polys) {
+    for (let hi = 1; hi < poly.length; hi++) {
+      const ring = poly[hi];
+      ctx.beginPath();
+      ctx.moveTo(ring[0], ring[1]);
+      for (let i = 2; i < ring.length; i += 2) ctx.lineTo(ring[i], ring[i + 1]);
+      ctx.closePath();
+      ctx.fillStyle = '#c3b9a2';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(60,58,48,.28)';
+      ctx.lineWidth = 0.5;
+      ctx.stroke();
+    }
+  }
+
+  // 屋顶南缘的暗线：把屋面与立面分开
+  ctx.save();
+  ctx.clip(b._path, 'evenodd');
+  ctx.fillStyle = 'rgba(24,28,24,.28)';
+  ctx.fillRect(bb[0], bb[3] - 0.9, w, 0.9);
+  ctx.restore();
+
   // 外轮廓
   ctx.strokeStyle = P.outline;
-  ctx.lineWidth = 0.5;
+  ctx.lineWidth = 0.55;
   ctx.stroke(b._path);
   ctx.restore();
 }
@@ -574,50 +662,149 @@ export function drawLandmark(ctx, b, cam, hour, kind) {
   };
 
   if (kind === 'boya') {
-    const cx = bb[0] + w / 2, cy = bb[1] + h / 2;
-    const sxp = Math.round(cam.sx(cx)), syp = Math.round(cam.sy(cy));
-    const r0 = Math.max(3, Math.round(5.2 * S));
-    // 影子
+    // 高塔用"立面"画：以占地南沿为基点向上立起（俯视画不出塔高）
+    const cx = Math.round(cam.sx(bb[0] + w / 2));
+    const baseY = Math.round(cam.sy(bb[3]));
+    const S = cam.scale;
+    const H = 27 * S;
+    const baseW = Math.max(12, Math.round(10 * S));
+    const tiers = 13;
+    // 投影
+    ctx.fillStyle = 'rgba(36,46,32,.26)';
+    const sr = Math.round(baseW * 0.8);
+    for (let dy = -3; dy <= 3; dy++) {
+      const ww = Math.round(sr * Math.cos(dy / 4));
+      ctx.fillRect(cx - ww + 7, baseY + dy * 1.5 + 2, ww * 2, 1);
+    }
+    // 须弥座
+    const plinthH = Math.max(4, Math.round(2.6 * S));
+    ctx.fillStyle = '#a9a293';
+    ctx.fillRect(cx - Math.round(baseW * 0.66), baseY - plinthH, Math.round(baseW * 1.32), plinthH);
+    ctx.fillStyle = 'rgba(255,250,235,.18)';
+    ctx.fillRect(cx - Math.round(baseW * 0.66), baseY - plinthH, Math.round(baseW * 1.32), 1);
+    ctx.fillStyle = 'rgba(40,40,34,.3)';
+    ctx.fillRect(cx - Math.round(baseW * 0.66), baseY - 1, Math.round(baseW * 1.32), 1);
+
+    // 13 层：塔身 + 出檐
+    let y = baseY - plinthH;
+    const tierH = Math.max(2, Math.round((H - plinthH) / tiers));
+    for (let i = 0; i < tiers; i++) {
+      const t = i / (tiers - 1);
+      const tw = Math.max(5, Math.round(baseW * (1 - t * 0.40)));
+      const bodyH = Math.max(2, Math.round(tierH * 0.62));
+      const eaveH = Math.max(1, tierH - bodyH);
+      const eaveW = tw + Math.max(3, Math.round((3.4 - t * 1.6) * S));
+      // 塔身（砖色，交替明暗）
+      ctx.fillStyle = i % 2 ? '#c2ab8c' : '#b39b7c';
+      ctx.fillRect(cx - Math.round(tw / 2), y - bodyH, tw, bodyH);
+      // 侧向明暗
+      const sideW = Math.max(2, Math.round(tw * 0.26));
+      ctx.fillStyle = 'rgba(255,248,230,.18)';
+      ctx.fillRect(cx - Math.round(tw / 2) + tw - sideW, y - bodyH, sideW, bodyH);
+      ctx.fillStyle = 'rgba(38,36,30,.20)';
+      ctx.fillRect(cx - Math.round(tw / 2), y - bodyH, Math.max(1, Math.round(tw * 0.18)), bodyH);
+      // 出檐（深灰，两端外挑，下方一条阴影）
+      ctx.fillStyle = '#5f5a4f';
+      ctx.fillRect(cx - Math.round(eaveW / 2), y - bodyH - eaveH, eaveW, eaveH);
+      ctx.fillStyle = 'rgba(255,250,235,.28)';
+      ctx.fillRect(cx - Math.round(eaveW / 2), y - bodyH - eaveH, eaveW, 1);
+      ctx.fillStyle = 'rgba(20,22,18,.28)';
+      ctx.fillRect(cx - Math.round(eaveW / 2), y - bodyH, eaveW, 1);
+      // 小窗
+      if (tw > 7 && i % 2 === 0) {
+        ctx.fillStyle = 'rgba(50,44,36,.55)';
+        ctx.fillRect(cx - 1, y - bodyH + Math.max(1, Math.round(bodyH * 0.3)), 2, Math.max(1, Math.round(bodyH * 0.4)));
+      }
+      y -= tierH;
+    }
+    // 塔刹
+    ctx.fillStyle = '#4e4a41';
+    ctx.fillRect(cx - 1, y - Math.round(5 * S), 2, Math.round(5 * S));
+    ctx.fillStyle = P.gold;
+    ctx.fillRect(cx - 2, y - Math.round(6 * S), 4, 2);
+    ctx.fillRect(cx - 2, y - Math.round(8 * S), 4, 2);
+    ctx.fillRect(cx - 1, y - Math.round(10 * S), 2, Math.round(2 * S));
+    cam.label('博雅塔', bb[0] + w / 2, bb[3] - 27 - 3, 10.5, '#ffeccc', 0.95);  } else if (kind === 'westgate') {
+    // 西门画成立面：三开间朱红大门 + 灰瓦歇山顶 + 石狮
+    const S = cam.scale;
+    const cx = Math.round(cam.sx(bb[0] + w / 2));
+    const baseY = Math.round(cam.sy(bb[3]));
+    const GW = Math.max(34, Math.round(w * S * 1.8));   // 门面宽度
+    const wallH = Math.max(10, Math.round(3.6 * S));
+    const roofH = Math.max(8, Math.round(3.2 * S));
+    const half = GW / 2;
+    // 地面投影
     ctx.fillStyle = 'rgba(36,46,32,.24)';
     for (let dy = -2; dy <= 2; dy++) {
-      const ww = Math.round(r0 * Math.cos(dy / 3.2));
-      ctx.fillRect(sxp - ww + 3, syp + dy * 1.5 + 3, ww * 2, 1);
+      const ww = Math.round(half * Math.cos(dy / 3.4));
+      ctx.fillRect(cx - ww + 5, baseY + dy * 1.4 + 1, ww * 2, 1);
     }
-    // 三层塔身（自下而上收缩，制造高度感）
-    pixelDisc(ctx, sxp, syp, r0, '#8d8674');
-    pixelDisc(ctx, sxp - 0, syp - 3, r0 * 0.82, '#b0a184');
-    pixelDisc(ctx, sxp - 0, syp - 6, r0 * 0.62, '#c3b393');
-    pixelDisc(ctx, sxp - 0, syp - 8, r0 * 0.40, '#8f8a7a');
-    // 塔刹
-    ctx.fillStyle = '#6b6558';
-    ctx.fillRect(sxp - 1, syp - 8 - r0 * 0.4 - 3, 2, 3);
-    ctx.fillStyle = P.gold;
-    ctx.fillRect(sxp - 1, syp - 8 - r0 * 0.4 - 5, 2, 2);
-    cam.label('博雅塔', cx, bb[1] - 1.2, 10.5, '#ffeccc', 0.95);
-  } else if (kind === 'westgate') {
-    // 10×18m 校门：长脊沿南北，西面向路；灰瓦顶 + 朱红墙 + 三开间门洞 + 石狮
-    ctx.fillStyle = 'rgba(36,46,32,.22)';
-    ctx.fillRect(X(0) + 3, Y(h) - 1, PW(w), 3);
     // 台基
-    rect(0, 0, w, h, '#a9a294');
-    // 屋面：四坡，正脊沿长轴
-    rect(0.7, 0.7, w - 1.4, h - 1.4, '#4f5a63');
-    rect(1.5, 1.5, w - 3, h - 3, '#5b666f');
-    rect(w / 2 - 0.3, 1.5, 0.6, h - 3, '#39434b');
-    // 南北两端的红墙（俯视时只在山墙处露出）
-    rect(0.7, 0.7, w - 1.4, 1.2, P.red);
-    rect(0.7, h - 1.9, w - 1.4, 1.2, P.red);
-    // 西侧门洞（三个小缺口）
-    for (let i = 0; i < 3; i++) {
-      const yy = 3.4 + i * ((h - 6.8) / 3);
-      rect(0.7, yy, 1.2, (h - 6.8) / 3 - 1.4, '#4b2e24');
+    ctx.fillStyle = '#a9a293';
+    ctx.fillRect(cx - half - 3, baseY - 3, GW + 6, 3);
+    // 朱红墙体
+    ctx.fillStyle = '#a84636';
+    ctx.fillRect(cx - half, baseY - 3 - wallH, GW, wallH);
+    // 三开间：明间通行（深色），两次间朱红门
+    const bayW = Math.floor(GW / 3);
+    const doorH = Math.round(wallH * 0.72);
+    const doorY = baseY - 3 - doorH;
+    ctx.fillStyle = '#5a3226';
+    ctx.fillRect(cx - Math.floor(bayW / 2), doorY, bayW, doorH);
+    ctx.fillStyle = '#8f3a2c';
+    ctx.fillRect(cx - half + 2, doorY, bayW - 4, doorH);
+    ctx.fillRect(cx + half - bayW + 2, doorY, bayW - 4, doorH);
+    // 门钉
+    ctx.fillStyle = P.gold;
+    for (let r = 0; r < 2; r++) {
+      for (let cI = 0; cI < 3; cI++) {
+        ctx.fillRect(cx - half + 5 + cI * 4, doorY + 3 + r * 4, 1, 1);
+        ctx.fillRect(cx + half - bayW + 5 + cI * 4, doorY + 3 + r * 4, 1, 1);
+      }
     }
+    // 彩画额枋
+    const beamY = baseY - 3 - wallH;
+    ctx.fillStyle = '#3f7a86';
+    ctx.fillRect(cx - half, beamY - 3, GW, 3);
+    ctx.fillStyle = '#2f5f6a';
+    ctx.fillRect(cx - half, beamY - 1, GW, 1);
+    // 匾额
+    ctx.fillStyle = '#1f3f4a';
+    ctx.fillRect(cx - 6, beamY - 3, 12, 3);
+    ctx.fillStyle = P.gold;
+    ctx.fillRect(cx - 4, beamY - 2, 8, 1);
+    // 屋顶：梯形灰瓦 + 两端起翘
+    ctx.fillStyle = '#4f5a63';
+    ctx.beginPath();
+    ctx.moveTo(cx - half - 6, beamY - 3);
+    ctx.lineTo(cx - half + 5, beamY - 3 - roofH);
+    ctx.lineTo(cx + half - 5, beamY - 3 - roofH);
+    ctx.lineTo(cx + half + 6, beamY - 3);
+    ctx.closePath();
+    ctx.fill();
+    // 瓦垄
+    ctx.fillStyle = 'rgba(24,28,26,.28)';
+    for (let x = cx - half - 2; x < cx + half + 2; x += 3) {
+      ctx.fillRect(x, beamY - 3 - roofH + 2, 1, roofH - 2);
+    }
+    // 正脊 + 檐口高光
+    ctx.fillStyle = '#39434b';
+    ctx.fillRect(cx - half + 4, beamY - 4 - roofH, GW - 8, 2);
+    ctx.fillStyle = 'rgba(255,250,235,.3)';
+    ctx.fillRect(cx - half + 5, beamY - 3 - roofH, GW - 10, 1);
+    // 两端起翘
+    ctx.fillStyle = '#39434b';
+    ctx.fillRect(cx - half - 7, beamY - 5 - roofH + 1, 3, 2);
+    ctx.fillRect(cx + half + 4, beamY - 5 - roofH + 1, 3, 2);
     // 石狮
-    rect(-2.2, 1.6, 1.6, 1.6, '#b9b3a3');
-    rect(-2.2, h - 3.2, 1.6, 1.6, '#b9b3a3');
-    outline(0.7, 0.7, w - 1.4, h - 1.4);
-    cam.label('北京大学西门', bb[0] + w / 2, bb[1] - 1.4, 10.5, '#ffeccc', 0.95);
-  } else if (kind === 'library') {
+    ctx.fillStyle = '#b8b2a0';
+    ctx.fillRect(cx - half - 8, baseY - 8, 6, 8);
+    ctx.fillRect(cx + half + 2, baseY - 8, 6, 8);
+    ctx.fillStyle = 'rgba(60,58,48,.3)';
+    ctx.fillRect(cx - half - 8, baseY - 3, 6, 3);
+    ctx.fillRect(cx + half + 2, baseY - 3, 6, 3);
+    cam.label('北京大学西门', bb[0] + w / 2, bb[3] - 11, 10.5, '#ffeccc', 0.95);  } else if (kind === 'library') {
+    drawBuilding(ctx, b, cam, hour);   // 先画墙体与檐口，保证有体积
     ctx.fillStyle = 'rgba(36,46,32,.20)';
     ctx.fillRect(X(0) + 4, Y(h) - 1, PW(w), 4);
     // 主体屋面
@@ -638,6 +825,7 @@ export function drawLandmark(ctx, b, cam, hour, kind) {
     outline(0.5, 0.5, w - 1, h - 1);
     cam.label('北京大学图书馆', bb[0] + w / 2, bb[1] - 1.2, 10.5, '#ffeccc', 0.95);
   } else if (kind === 'podium') {
+    drawBuilding(ctx, b, cam, hour);
     ctx.fillStyle = 'rgba(36,46,32,.20)';
     ctx.fillRect(X(0) + 4, Y(h) - 1, PW(w), 4);
     // 石材屋面
