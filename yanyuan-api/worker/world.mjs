@@ -26,6 +26,10 @@ export class World {
       sql.exec(`CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at)`);
       sql.exec(`CREATE TABLE IF NOT EXISTS rate_limits (
         key TEXT PRIMARY KEY, hits INTEGER NOT NULL DEFAULT 0, expires_at INTEGER NOT NULL)`);
+      sql.exec(`CREATE TABLE IF NOT EXISTS gestures (
+        id TEXT PRIMARY KEY, from_id TEXT NOT NULL, from_name TEXT NOT NULL,
+        to_id TEXT NOT NULL, kind TEXT NOT NULL, created_at INTEGER NOT NULL)`);
+      sql.exec(`CREATE INDEX IF NOT EXISTS idx_gestures_to ON gestures(to_id, created_at)`);
     });
     return this.ready;
   }
@@ -73,6 +77,7 @@ export class World {
       db: this._db(),
       now: () => Date.now(),
       allowedOrigins: allowedOrigins(this.env),
+      adminKey: this.env.ADMIN_KEY || '',
     });
 
     let res;

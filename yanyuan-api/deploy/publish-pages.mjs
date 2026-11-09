@@ -1,5 +1,5 @@
 // 发布到 GitHub Pages 的 yanyuan/ 子路径：拷贝、注入后端地址、提交推送、校验线上地址
-import { readFile, writeFile, mkdir, cp, rm } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, cp, rm, readdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -41,6 +41,14 @@ async function main() {
   if (!apiBase) throw new Error('没有可用的 apiBase');
 
   const buildId = new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 12);
+  // 先把本地 pages 仓库对齐远端（此前用 API 推送过，会造成分叉）
+  try {
+    git(['fetch', 'origin'], { q: true });
+    git(['reset', '--hard', 'origin/main'], { q: true });
+    console.log('→ 已同步远端 pages 仓库');
+  } catch (e) {
+    console.warn('  同步远端失败（继续）：', e.message.split('\n')[0]);
+  }
   console.log('→ 准备发布目录', DEST);
   await rm(DEST, { recursive: true, force: true });
   await mkdir(DEST, { recursive: true });
@@ -57,6 +65,24 @@ async function main() {
     `export const API_BASE = ${JSON.stringify(apiBase)};\n` +
     `export const BUILD_ID = ${JSON.stringify(buildId)};\n`;
   await writeFile(join(DEST, 'src', 'api-base.js'), cfg);
+
+  // 原子升级：给 index.html 与所有模块导入加 ?v=构建号，
+  // 避免浏览器把新旧文件混着用导致白屏
+  const idxPath = join(DEST, 'index.html');
+  let html = await readFile(idxPath, 'utf8');
+  html = html.replace(/(\.\/src\/[A-Za-z0-9_.-]+\.(?:js|css))(\?[^"']*)?/g, `$1?v=${buildId}`);
+  await writeFile(idxPath, html);
+
+  const srcDir = join(DEST, 'src');
+  const modFiles = (await readdir(srcDir)).filter(f => f.endsWith('.js'));
+  for (const f of modFiles) {
+    if (f === 'api-base.js') continue;
+    const p = join(srcDir, f);
+    let code = await readFile(p, 'utf8');
+    code = code.replace(/(from\s+['"]\.\/[A-Za-z0-9_.-]+\.js)(['"])/g, `$1?v=${buildId}$2`);
+    code = code.replace(/(import\s+['"]\.\/[A-Za-z0-9_.-]+\.js)(['"])/g, `$1?v=${buildId}$2`);
+    await writeFile(p, code);
+  }
 
   // 站点内 README（Pages 上可直接查看）
   await writeFile(join(DEST, 'README.md'), [
@@ -79,7 +105,16 @@ async function main() {
     git(['-c', 'user.name=xxxxu-ll', '-c', 'user.email=xx080102@126.com', 'commit', '-m',
       `deploy(yanyuan): 发布《像素燕园》 ${buildId}`]);
     console.log('→ 推送');
-    git(['push', 'origin', 'main']);
+    try {
+      git(['push', 'origin', 'main']);
+    } catch (e) {
+      console.warn('  git push 失败，改用 GitHub API 推送…');
+      execFileSync('powershell.exe', [
+        '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', join(ROOT, 'deploy', 'push-api.ps1'),
+        '-Dir', DEST, '-Prefix', 'yanyuan', '-Repo', REPO, '-Branch', 'main',
+        '-Message', `deploy(yanyuan): 发布《像素燕园》 ${buildId}`,
+      ], { stdio: 'inherit' });
+    }
   }
 
   // ---- 等待 Pages 构建并校验 ----

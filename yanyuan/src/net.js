@@ -76,6 +76,11 @@ export class Api {
     return this._fetch('/players', { body: { name, appearance, profile }, auth: false });
   }
 
+  /** 只读检查昵称是否可用，不创建角色 */
+  checkName(name) {
+    return this._fetch('/check-name', { body: { name }, auth: false, timeout: 8000 });
+  }
+
   session(token) {
     this.token = token;
     return this._fetch('/session', { body: {} });
@@ -86,6 +91,8 @@ export class Api {
   }
 
   chat(text) { return this._fetch('/chat', { body: { text } }); }
+
+  wave(to) { return this._fetch('/wave', { body: { to } }); }
 
   saveProgress(progress) { return this._fetch('/progress', { body: { progress } }); }
 

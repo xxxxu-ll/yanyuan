@@ -14,7 +14,7 @@ export const LIMITS = {
   CHAT_HISTORY_MS: 15 * 60 * 1000,
   CHAT_PAGE: 40,
   MESSAGE_KEEP: 300,
-  REGISTER_PER_HOUR: 20,
+  REGISTER_PER_HOUR: 60,
   TOKEN_LEN: 20,
 };
 
@@ -170,6 +170,7 @@ function publicPlayer(row) {
     id: row.id,
     name: row.name,
     appearance: parseJSON(row.appearance, {}),
+    profile: parseJSON(row.profile, {}),
     x: row.x,
     y: row.y,
     dir: row.dir,
@@ -210,7 +211,7 @@ async function hitLimit(db, key, limit, windowMs, now) {
 /**
  * @param {{db: object, now?: () => number, maxW?: number, minW?: number, allowedOrigins?: string[]}} opts
  */
-export function createWorld({ db, now = () => Date.now(), bounds = null, allowedOrigins = [] }) {
+export function createWorld({ db, now = () => Date.now(), bounds = null, allowedOrigins = [], adminKey = '' }) {
   const worldBounds = bounds || { minX: -1220, minY: -760, maxX: 940, maxY: 790 };
 
   async function authenticate(headers) {
@@ -221,6 +222,15 @@ export function createWorld({ db, now = () => Date.now(), bounds = null, allowed
     return row || null;
   }
 
+  function adminOk(headers) {
+    if (!adminKey) return false;
+    const got = headers['x-admin-key'] || headers['X-Admin-Key'] || '';
+    if (got.length !== adminKey.length) return false;
+    let diff = 0;
+    for (let i = 0; i < got.length; i++) diff |= got.charCodeAt(i) ^ adminKey.charCodeAt(i);
+    return diff === 0;
+  }
+
   async function handle(req) {
     const { method, path, headers = {}, body = null, ip = '0.0.0.0' } = req;
     const t = now();
@@ -229,7 +239,57 @@ export function createWorld({ db, now = () => Date.now(), bounds = null, allowed
 
     if (path === '/api/health' || path === '/health') {
       const online = await db.get('SELECT COUNT(*) AS n FROM players WHERE seen_at > ?', [t - LIMITS.ONLINE_WINDOW_MS]);
-      return json(200, { ok: true, online: online ? online.n : 0, now: t });
+      const total = await db.get('SELECT COUNT(*) AS n FROM players', []);
+      return json(200, { ok: true, online: online ? online.n : 0, total: total ? total.n : 0, now: t });
+    }
+
+    // ---- 昵称可用性（只读，便于创建角色时即时提示）----
+    if (path === '/api/check-name' && method === 'POST') {
+      const limited = await hitLimit(db, 'name:' + ip, 60, 60_000, t);
+      if (!limited.ok) return fail(429, 'rate_limited', '查得太快了，稍后再试');
+      const name = validName(body && body.name);
+      if (!name) return fail(400, 'bad_name', `昵称需要 ${LIMITS.NAME_MIN}–${LIMITS.NAME_MAX} 个字符`);
+      const row = await db.get('SELECT id, created_at FROM players WHERE name_key = ?', [name.toLowerCase()]);
+      return json(200, {
+        name,
+        available: !row,
+        // 只暴露「什么时候被注册的」，不暴露任何角色内容
+        takenSince: row ? row.created_at : null,
+      });
+    }
+
+    // ---- 维护接口（需要 X-Admin-Key，未配置时直接当作不存在）----
+    if (path.startsWith('/api/admin/') && method === 'POST') {
+      if (!adminKey) return fail(404, 'not_found', '没有这个接口');
+      if (!adminOk(headers)) return fail(403, 'forbidden', '无权访问');
+      if (path === '/api/admin/players') {
+        const q = cleanText(body && body.q, 20);
+        const rows = q
+          ? await db.all('SELECT id, name, created_at, seen_at, progress FROM players WHERE name LIKE ? ORDER BY created_at DESC LIMIT 50', ['%' + q + '%'])
+          : await db.all('SELECT id, name, created_at, seen_at, progress FROM players ORDER BY created_at DESC LIMIT 50', []);
+        return json(200, { players: rows.map(r => ({ id: r.id, name: r.name, createdAt: r.created_at, seenAt: r.seen_at, progressBytes: (r.progress || '').length })) });
+      }
+      if (path === '/api/admin/reset-token') {
+        // 补发恢复码：生成新凭证并作废旧凭证（用于旧弹窗未显示、玩家丢了码的情况）
+        const name = cleanText(body && body.name, LIMITS.NAME_MAX);
+        if (!name) return fail(400, 'bad_name', '缺少昵称');
+        const target = await db.get('SELECT id FROM players WHERE name_key = ?', [name.toLowerCase()]);
+        if (!target) return fail(404, 'not_found', '没有这个角色');
+        const token = randomHex(LIMITS.TOKEN_LEN);
+        const hash = await sha256Hex(token);
+        await db.run('UPDATE players SET token_hash = ? WHERE id = ?', [hash, target.id]);
+        return json(200, { name, token, recovery: formatRecovery(token) });
+      }
+      if (path === '/api/admin/delete') {
+        const name = cleanText(body && body.name, LIMITS.NAME_MAX);
+        if (!name) return fail(400, 'bad_name', '缺少昵称');
+        const row = await db.get('SELECT id FROM players WHERE name_key = ?', [name.toLowerCase()]);
+        if (!row) return json(200, { deleted: 0 });
+        await db.run('DELETE FROM messages WHERE player_id = ?', [row.id]);
+        await db.run('DELETE FROM players WHERE id = ?', [row.id]);
+        return json(200, { deleted: 1, name });
+      }
+      return fail(404, 'not_found', '没有这个接口');
     }
 
     // ---- 创建角色 ----
@@ -278,7 +338,7 @@ export function createWorld({ db, now = () => Date.now(), bounds = null, allowed
     }
 
     // 以下接口都需要身份
-    const authed = new Set(['/api/sync', '/api/chat', '/api/progress', '/api/profile']);
+    const authed = new Set(['/api/sync', '/api/chat', '/api/progress', '/api/profile', '/api/wave']);
     if (!authed.has(path)) return fail(404, 'not_found', '没有这个接口');
 
     const row = await authenticate(headers);
@@ -307,7 +367,7 @@ export function createWorld({ db, now = () => Date.now(), bounds = null, allowed
       }
 
       const others = await db.all(
-        `SELECT id, name, appearance, x, y, dir, moving, mode, seen_at
+        `SELECT id, name, appearance, profile, x, y, dir, moving, mode, seen_at
          FROM players WHERE seen_at > ? AND id <> ? LIMIT 80`,
         [t - LIMITS.ONLINE_WINDOW_MS, row.id]
       );
@@ -321,9 +381,33 @@ export function createWorld({ db, now = () => Date.now(), bounds = null, allowed
         now: t,
         players: others.map(publicPlayer),
         messages: msgs.map(m => ({ id: m.id, playerId: m.player_id, name: m.name, text: m.text, at: m.created_at })),
+        gestures: await (async () => {
+          const rows = await db.all(
+            `SELECT id, from_id, from_name, kind, created_at FROM gestures
+             WHERE to_id = ? AND created_at > ? ORDER BY created_at ASC LIMIT 20`,
+            [row.id, t - 15000]
+          );
+          return rows.map(g => ({ id: g.id, fromId: g.from_id, fromName: g.from_name, kind: g.kind, at: g.created_at }));
+        })(),
         self: { x, y, dir, mode },
         online: others.length + 1,
       });
+    }
+
+    // ---- 瞬时互动：挥手 ----
+    if (path === '/api/wave' && method === 'POST') {
+      const to = cleanText(body && body.to, 40);
+      if (!to) return fail(400, 'bad_target', '缺少对象');
+      if (to === row.id) return fail(400, 'bad_target', '不能对自己挥手');
+      const target = await db.get('SELECT id, name, seen_at FROM players WHERE id = ?', [to]);
+      if (!target) return fail(404, 'not_found', '这个玩家已经不在了');
+      if (target.seen_at < t - LIMITS.ONLINE_WINDOW_MS) return fail(409, 'offline', '对方已经离线');
+      const limited = await hitLimit(db, 'wave:' + row.id, 30, 60_000, t);
+      if (!limited.ok) return fail(429, 'rate_limited', '挥得太快了');
+      const id = 'g_' + randomHex(10);
+      await db.run('INSERT INTO gestures (id, from_id, from_name, to_id, kind, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+        [id, row.id, row.name, to, 'wave', t]);
+      return json(201, { gesture: { id, fromName: row.name, kind: 'wave', at: t } });
     }
 
     // ---- 聊天 ----

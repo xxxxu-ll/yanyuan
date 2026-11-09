@@ -32,7 +32,7 @@ export async function createServer({ dbPath = ':memory:', gameDir = GAME_DIR, lo
     const p = join(MIGRATIONS, f);
     if (existsSync(p)) db.raw.exec(await readFile(p, 'utf8'));
   }
-  const world = createWorld({ db });
+  const world = createWorld({ db, adminKey: process.env.ADMIN_KEY || '' });
 
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');

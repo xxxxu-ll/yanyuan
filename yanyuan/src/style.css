@@ -65,6 +65,8 @@ canvas#game { position: absolute; inset: 0; width: 100%; height: 100%; display: 
   white-space: nowrap;
 }
 .chip b { color: var(--ink); font-variant-numeric: tabular-nums; }
+.chip.save-warn { background: #fdf1da; border-color: #e3c48b; color: #8a6320; }
+.chip.save-bad { background: #fbe4df; border-color: #e0a99c; color: #9c3826; }
 .chip-clock { font-variant-numeric: tabular-nums; letter-spacing: .5px; }
 
 .hud-topright { position: absolute; top: max(10px, env(safe-area-inset-top)); right: 12px; display: flex; gap: 6px; }
@@ -227,6 +229,8 @@ canvas#game { position: absolute; inset: 0; width: 100%; height: 100%; display: 
 .help-body { padding: 6px 22px 20px; }
 .help-body ul { padding-left: 18px; margin: 10px 0; }
 .help-body li { margin: 5px 0; font-size: 13.5px; }
+.help-code { margin-top: 16px; padding-top: 14px; border-top: 1px dashed var(--line); }
+.help-code .code-box { font-size: 16px; padding: 10px; letter-spacing: .1em; margin: 8px 0; }
 
 /* 开始屏 */
 .screen {
@@ -278,6 +282,16 @@ canvas#game { position: absolute; inset: 0; width: 100%; height: 100%; display: 
 .swatch.style.sel { background: #e8f1da; color: var(--green-dark); font-weight: 700; }
 .create-actions { display: flex; gap: 10px; margin-top: 6px; }
 #createError { color: var(--accent); min-height: 16px; margin: 2px 0 0; }
+#createError.ok { color: var(--green-dark); }
+.name-hint { font-size: 11.5px; min-height: 15px; }
+.name-hint.ok { color: var(--green-dark); }
+.name-hint.bad { color: var(--accent); }
+.create-recover {
+  margin-top: 4px; padding: 10px 12px; border: 1px dashed var(--line); border-radius: 10px;
+  background: var(--paper-2);
+}
+.create-recover p { margin: 0 0 8px; }
+.create-recover-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
 /* 恢复码 */
 .restore-inner { background: var(--paper); border-radius: 18px; padding: 24px; width: min(470px, 94vw); box-shadow: 0 20px 60px rgba(20,30,16,.35); }
@@ -318,6 +332,63 @@ code { background: var(--paper-2); padding: 1px 5px; border-radius: 4px; font-si
 
 .boot { position: absolute; inset: 0; background: #f6f2e6; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; z-index: 90; transition: opacity .4s ease; }
 .boot.done { opacity: 0; pointer-events: none; }
+
+/* 恢复码弹窗必须盖在创建角色页之上（.screen 是 z-index 40） */
+#codeOverlay { z-index: 85; }
+
+/* 地点卡片 */
+.place-card { width: min(560px, 94vw); }
+.place-body { padding: 16px 22px 20px; }
+.place-story { font-size: 14.5px; line-height: 1.75; margin: 0 0 14px; }
+.place-detail {
+  background: var(--paper-2); border-left: 3px solid var(--gold); border-radius: 0 8px 8px 0;
+  padding: 10px 14px; margin-bottom: 16px;
+}
+.place-detail p { margin: 4px 0 0; font-size: 13.5px; color: var(--ink-soft); }
+.place-label { font-size: 11px; letter-spacing: .2em; color: #9a7b3a; font-weight: 700; }
+.place-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.place-note { margin: 14px 0 0; }
+
+/* 前五分钟邀请 */
+.invite-card {
+  position: absolute; left: 50%; transform: translateX(-50%);
+  top: max(64px, calc(env(safe-area-inset-top) + 56px));
+  width: min(430px, 92vw); background: rgba(253,250,243,.98);
+  border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow);
+  padding: 12px 14px; z-index: 25;
+}
+.invite-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.invite-head b { font-size: 13.5px; }
+.ghostbtn.tiny { padding: 3px 9px; font-size: 11.5px; }
+.invite-list { display: flex; flex-direction: column; gap: 6px; }
+.invite-item {
+  display: flex; flex-direction: column; gap: 2px; text-align: left; cursor: pointer;
+  border: 1px solid var(--line); background: #fff; border-radius: 9px; padding: 8px 11px;
+  font-family: inherit;
+}
+.invite-item:hover { background: var(--paper-2); }
+.invite-item b { font-size: 13px; }
+.invite-item span { font-size: 11.5px; color: var(--ink-soft); }
+
+/* 玩家名片 */
+.player-card { width: min(460px, 94vw); }
+.pc-body { display: flex; gap: 16px; padding: 16px 20px 20px; }
+#pcAvatar {
+  width: 96px; height: 132px; flex: none; border-radius: 10px; border: 1px solid var(--line);
+  background: linear-gradient(#dff0c8, #b9d99a); image-rendering: pixelated;
+}
+.pc-info { flex: 1; min-width: 0; }
+.pc-info p { margin: 0 0 8px; font-size: 13.5px; }
+.pc-actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 6px 0 8px; }
+
+/* 致命错误提示 */
+.fatal {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  z-index: 200; background: var(--paper); border: 1px solid var(--line); border-radius: 14px;
+  box-shadow: 0 20px 60px rgba(20,30,16,.4); padding: 22px 24px; width: min(520px, 92vw); text-align: center;
+}
+.fatal h3 { margin: 0 0 10px; color: var(--accent); }
+.fatal p { font-size: 13px; color: var(--ink-soft); margin: 0 0 14px; word-break: break-word; }
 .boot-logo { font-size: 30px; font-weight: 800; letter-spacing: .3em; color: var(--green-dark); }
 .boot-bar { width: min(260px, 60vw); height: 6px; background: #e2dbc7; border-radius: 999px; overflow: hidden; }
 .boot-bar i { display: block; height: 100%; width: 0; background: var(--green); transition: width .25s ease; }

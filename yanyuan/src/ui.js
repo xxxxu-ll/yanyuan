@@ -108,6 +108,19 @@ export function setClock(hour, minute) {
   el.chipClock.textContent = `${pad2(hour)}:${pad2(minute)}`;
 }
 
+/** 存档状态：saved / pending / saving / offline */
+export function setSaveState(state, attempts = 0) {
+  const chip = document.getElementById('chipSave');
+  if (!chip) return;
+  chip.classList.remove('save-warn', 'save-bad');
+  if (state === 'saving') { chip.textContent = '保存中…'; }
+  else if (state === 'pending') { chip.textContent = '待同步'; chip.classList.add('save-warn'); }
+  else if (state === 'offline') {
+    chip.textContent = attempts > 1 ? `未保存·重试(${attempts})` : '未保存';
+    chip.classList.add('save-bad');
+  } else { chip.textContent = '已保存'; }
+}
+
 // ---------------- 手册 ----------------
 export function renderJournal(world, progress) {
   const found = world.landmarks.filter(l => !l.aliasOf && progress.visited[l.name]).length;
@@ -175,6 +188,85 @@ export function flash() {
 export function bootProgress(p, text) {
   el.bootBar.style.width = Math.round(p * 100) + '%';
   if (text) el.bootText.textContent = text;
+}
+
+// ---------------- 地点卡片 ----------------
+export function showPlace(place, name) {
+  const ov = document.getElementById('placeOverlay');
+  document.getElementById('placeTitle').textContent = place.title || name;
+  document.getElementById('placeStory').textContent = place.story || '';
+  document.getElementById('placeDetail').textContent = place.detail || '';
+  document.getElementById('placeRemember').textContent = place.act || '记进手册';
+  ov.classList.remove('hidden');
+  ov.dataset.name = name || '';
+  return ov;
+}
+
+export function hidePlace() {
+  document.getElementById('placeOverlay').classList.add('hidden');
+}
+
+// ---------------- 玩家名片 ----------------
+export function showPlayerCard(p) {
+  const ov = document.getElementById('cardOverlay');
+  document.getElementById('pcName').textContent = p.name || '同学';
+  const meta = [p.dept, p.grade].filter(Boolean).join(' · ');
+  document.getElementById('pcMeta').textContent = meta || '燕园里的同学';
+  document.getElementById('pcBio').textContent = p.bio || '';
+  const hint = document.getElementById('pcHint');
+  const dist = p.dist != null ? `距离你 ${Math.round(p.dist)} 米` : '';
+  hint.textContent = dist ? dist + ' · 只能看到公开资料' : '只能看到公开资料';
+  ov.classList.remove('hidden');
+  ov.dataset.id = p.id;
+  return ov;
+}
+
+export function hidePlayerCard() {
+  document.getElementById('cardOverlay').classList.add('hidden');
+}
+
+/** 前五分钟的邀请卡片 */
+export function showInvites(items, onPick, onSkip) {
+  const card = document.getElementById('inviteCard');
+  const list = document.getElementById('inviteList');
+  list.innerHTML = '';
+  for (const it of items) {
+    const btn = document.createElement('button');
+    btn.className = 'invite-item';
+    btn.innerHTML = `<b>${escapeHtml(it.title)}</b><span>${escapeHtml(it.desc)}</span>`;
+    btn.onclick = () => { hideInvites(); onPick(it); };
+    list.appendChild(btn);
+  }
+  document.getElementById('inviteSkip').onclick = () => { hideInvites(); onSkip && onSkip(); };
+  card.classList.remove('hidden');
+}
+
+export function hideInvites() {
+  document.getElementById('inviteCard').classList.add('hidden');
+}
+
+/** 致命错误：给出可读的提示，而不是黑屏 */export function showFatal(message) {
+  let box = document.getElementById('fatalBox');
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'fatalBox';
+    box.className = 'fatal';
+    document.body.appendChild(box);
+  }
+  box.innerHTML = '';
+  const h = document.createElement('h3');
+  h.textContent = '出了点问题';
+  const p = document.createElement('p');
+  p.style.whiteSpace = 'pre-wrap';
+  p.textContent = String(message || '未知错误');
+  const btn = document.createElement('button');
+  btn.className = 'primarybtn';
+  btn.textContent = '刷新页面';
+  btn.onclick = () => location.reload();
+  box.appendChild(h);
+  box.appendChild(p);
+  box.appendChild(btn);
+  box.classList.remove('hidden');
 }
 
 export function hideBoot() {

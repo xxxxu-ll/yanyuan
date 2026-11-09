@@ -66,6 +66,7 @@ async function main() {
   console.log('  account:', accountId);
 
   const scripts = await cf(`/accounts/${accountId}/workers/scripts`).catch(() => []);
+  const exists = (scripts || []).some(s => s.id === SCRIPT_NAME);
   console.log('  现有 Worker:', (scripts || []).map(s => s.id).join(', ') || '(无)');
 
   if (DRY) {
@@ -104,10 +105,11 @@ async function main() {
     bindings: [
       { type: 'durable_object_namespace', name: 'WORLD', class_name: 'World' },
       { type: 'plain_text', name: 'ALLOW_ORIGINS', text: 'https://xxxxu-ll.github.io' },
+      { type: 'plain_text', name: 'ADMIN_KEY', text: (env.ADMIN_KEY || '').trim() },
     ],
-    // multipart 上传接口使用的是单步迁移对象（不是数组）
-    migrations: { new_tag: 'v1', new_sqlite_classes: ['World'] },
   };
+  // 首次部署才声明迁移（创建 DO 类）；已存在时沿用既有配置，避免 tag 冲突
+  if (!exists) metadata.migrations = { new_tag: 'v1', new_sqlite_classes: ['World'] };
   const form = new FormData();
   form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }), 'metadata.json');
   form.append('worker.mjs', new Blob([worker], { type: 'application/javascript+module' }), 'worker.mjs');

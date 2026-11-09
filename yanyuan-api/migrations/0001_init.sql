@@ -37,3 +37,15 @@ CREATE TABLE IF NOT EXISTS rate_limits (
   hits       INTEGER NOT NULL DEFAULT 0,
   expires_at INTEGER NOT NULL
 );
+
+-- 瞬时互动（挥手等），只用于在线提示，不做长期存储
+CREATE TABLE IF NOT EXISTS gestures (
+  id         TEXT PRIMARY KEY,
+  from_id    TEXT NOT NULL,
+  from_name  TEXT NOT NULL,
+  to_id      TEXT NOT NULL,
+  kind       TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_gestures_to ON gestures(to_id, created_at);

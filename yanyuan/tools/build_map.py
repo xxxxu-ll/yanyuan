@@ -373,7 +373,6 @@ def main():
             seen.add(a)
             alias_index.append({"n": a, "t": b["cat"] or "建筑", "p": b["label"],
                                 "k": "building", "aliasOf": b["name"] or "未命名建筑"})
-
     # ---------- 出生点候选（校验不在建筑/水里） ----------
     def blocked(pt):
         for b in buildings:
@@ -413,6 +412,43 @@ def main():
         spot, moved = free_spot((dm(pt[0]), dm(pt[1])))
         spawns[key] = {"pt": spot, "moved": moved}
 
+    # ---------- 地标的"可达点"：从地标中心向外找最近的可站立位置 ----------
+    # 很多地标（尤其大建筑）的中心点在建筑内部，直接当导航终点会永远走不到。
+    def clear_pt(x, y, pad=14):
+        """点本身可走，并且四周留出约 1.4 米余量（角色有半径，贴着墙不算可达）"""
+        if blocked((x, y)):
+            return False
+        for dx, dy in ((pad, 0), (-pad, 0), (0, pad), (0, -pad),
+                       (pad, pad), (-pad, -pad), (pad, -pad), (-pad, pad)):
+            if blocked((x + dx, y + dy)):
+                return False
+        return True
+
+    def reachable_pt(pt_dm, radius=90.0):
+        cx, cy = pt_dm
+        if clear_pt(cx, cy):
+            return [int(cx), int(cy)], 0.0
+        r = 4
+        while r <= radius * 10:
+            for k in range(24):
+                ang = k * math.pi * 2 / 24
+                q = (cx + r * math.cos(ang), cy + r * math.sin(ang))
+                if clear_pt(q[0], q[1]):
+                    return [int(round(q[0])), int(round(q[1]))], r / 10.0
+            r += 10
+        return [int(cx), int(cy)], None
+
+    for lm in landmarks:
+        spot, moved = reachable_pt(lm["p"])
+        lm["a"] = spot
+        if moved:
+            lm["moved"] = round(moved, 1)
+    # 别名（建筑别名）沿用同一栋楼的可达点
+    _by_pt = {}
+    for lm in landmarks:
+        _by_pt[(lm["p"][0], lm["p"][1])] = lm["a"]
+    for a in alias_index:
+        a["a"] = _by_pt.get((a["p"][0], a["p"][1]), a["p"])
     # ---------- 可行走世界范围：覆盖全部要素 + 边距 ----------
     allp = []
     for b in buildings:
