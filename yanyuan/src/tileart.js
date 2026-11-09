@@ -50,11 +50,9 @@ export function drawPavingTile(ctx, dx, dy, px = TILE) {
       }
     }
   }
-  ctx.fillStyle = 'rgba(120,124,114,.45)';
+  ctx.fillStyle = 'rgba(120,124,114,.28)';
   ctx.fillRect(dx, dy + half - 1, px, 1);
   ctx.fillRect(dx + half - 1, dy, 1, half);
-  ctx.fillRect(dx, dy, px, 1);
-  ctx.fillRect(dx, dy, 1, px);
 }
 
 /** 画一格地面瓦片（素材未就绪时用程序化兜底） */
