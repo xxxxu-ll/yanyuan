@@ -1,5 +1,6 @@
 // 启动流程：加载地图 → 连接世界 → 创建角色 / 恢复存档 → 进入游戏
 import { loadMap } from './mapdata.js';
+import { setRenderPPM } from './render.js';
 import { buildMapLayers } from './minimap.js';
 import { Api, retry, ApiError } from './net.js';
 import { Game } from './game.js';
@@ -52,6 +53,7 @@ async function checkWorld({ quiet = false } = {}) {
 // ---------------- 启动 ----------------
 async function boot() {
   try {
+    if (new URLSearchParams(location.search).get('tile') === '1') setRenderPPM(8);
     ui.bootProgress(0.08, '正在加载燕园地图…');
     const world = await loadMap((p, text) => ui.bootProgress(0.08 + p * 0.55, text));
     state.world = world;

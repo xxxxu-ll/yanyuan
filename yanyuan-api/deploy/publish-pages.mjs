@@ -55,6 +55,7 @@ async function main() {
 
   await cp(join(GAME, 'index.html'), join(DEST, 'index.html'));
   await cp(join(GAME, 'src'), join(DEST, 'src'), { recursive: true });
+  await cp(join(GAME, 'assets'), join(DEST, 'assets'), { recursive: true }).catch(() => {});
   await cp(join(GAME, 'ATTRIBUTION.md'), join(DEST, 'ATTRIBUTION.md'));
   // 只发布运行必需的地图数据，截图/统计等开发产物不进站点
   await mkdir(join(DEST, 'data'), { recursive: true });

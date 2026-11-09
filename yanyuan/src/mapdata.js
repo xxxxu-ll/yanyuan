@@ -37,6 +37,9 @@ export class World {
         id: b.id, name: b.name, cat: b.cat, h: b.h, fl: b.fl, roof: b.roof, style: b.style,
         label: [b.label[0] * S, b.label[1] * S], polys, outer, bbox, area,
         alias: b.alias || [], heritage: !!b.heritage, sortY: bbox[3],
+        st: b.st || null,                       // 来自 style.csv 的真实风格数据
+        h: (b.st && b.st.h) || b.h,
+        fl: (b.st && b.st.fl) || b.fl,
         hero: HERO_BY_NAME[b.name] || null,
       };
     });

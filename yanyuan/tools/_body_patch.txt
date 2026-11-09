@@ -1,0 +1,281 @@
+  // ===== 2.5D 正确叠法：地基 = 占地轮廓，墙往上长，屋顶盖在墙顶 =====
+  const wallPx = Math.max(10, Math.round(hpx * 0.92));   // 墙高（屏幕像素）
+  const wallH = wallPx / S;                              // 墙高（米）
+  const wallTop = bb[3] - wallH;                         // 墙顶所在世界 y
+  const wallX0 = bb[0], wallX1 = bb[2];
+  const wallW = wallX1 - wallX0;
+
+  // 地基投影（贴地一圈，向下偏 1~2px）
+  ctx.save();
+  at(1.5, 2.5);
+  ctx.fillStyle = 'rgba(30,42,30,.20)';
+  ctx.fill(b._path);
+  ctx.restore();
+
+  // ---- 墙体：矩形立面，不沿多边形轮廓裁，保证窗是正的 ----
+  ctx.save();
+  at(0, 0);
+  ctx.fillStyle = wall;
+  ctx.fillRect(wallX0, wallTop, wallW, wallH);
+  // 立面底色：左右各压一点，读作转角
+  ctx.fillStyle = 'rgba(60,44,30,.10)';
+  ctx.fillRect(wallX0, wallTop, Math.min(1.2, wallW * 0.04), wallH);
+  ctx.fillStyle = 'rgba(255,250,240,.14)';
+  ctx.fillRect(wallX1 - Math.min(1.2, wallW * 0.04), wallTop, Math.min(1.2, wallW * 0.04), wallH);
+  // 墙顶压暗（屋顶落影）
+  ctx.fillStyle = 'rgba(48,38,28,.32)';
+  ctx.fillRect(wallX0, wallTop, wallW, Math.min(0.8, wallH * 0.1));
+  // 墙脚
+  ctx.fillStyle = 'rgba(30,22,14,.30)';
+  ctx.fillRect(wallX0, bb[3] - Math.min(0.7, wallH * 0.09), wallW, Math.min(0.7, wallH * 0.09));
+  ctx.restore();
+
+  // ---- 立面细节（全部在矩形里排版，不会歪）----
+  ctx.save();
+  at(0, 0);
+  ctx.beginPath();
+  ctx.rect(wallX0, wallTop, wallW, wallH);
+  ctx.clip();
+  const eaveM = Math.min(0.9, wallH * 0.13);
+  const floorsF = clamp(Math.round(wallH / 3.4), 1, 5);
+  const floorH = (wallH - eaveM) / floorsF;
+
+  const facades = {
+    '教学': ['glass', 'arch', 'brick', 'banner', 'arch', 'glass'],
+    '生活': ['balcony', 'brick', 'balcony', 'banner'],
+    '食堂': ['shop', 'shop', 'glass'],
+    '园林': ['classic', 'classic', 'arch'],
+    '体育': ['glass', 'glass', 'banner'],
+    '校园服务': ['shop', 'glass', 'brick'],
+    '校门': ['classic'],
+  };
+  const fList = facades[b.cat] || facades['教学'];
+  const facade = variant === 'classic' ? 'classic' : (stData && stData.win === '拱窗' ? 'arch' : (stData && stData.win === '木格窗' ? 'classic' : fList[seed % fList.length]));
+
+  if (facade === 'classic') {
+    const cols = Math.max(2, Math.round(wallW / 4.2));
+    const gap = wallW / (cols - 1 || 1);
+    ctx.fillStyle = '#b23a28';
+    for (let i = 0; i < cols; i++) ctx.fillRect(wallX0 + i * gap - 0.28, wallTop + eaveM, 0.56, wallH - eaveM);
+    for (let f = 0; f < floorsF; f++) {
+      const fy = wallTop + eaveM + f * floorH + floorH * 0.24;
+      const wh = Math.min(1.7, floorH * 0.46);
+      for (let i = 0; i < cols - 1; i++) {
+        const wx = wallX0 + i * gap + gap * 0.22, ww = gap * 0.56;
+        ctx.fillStyle = 'rgba(112,68,48,.8)';
+        ctx.fillRect(wx, fy, ww, wh);
+        ctx.fillStyle = 'rgba(240,220,180,.35)';
+        ctx.fillRect(wx, fy, ww, 0.18);
+        ctx.fillRect(wx + ww * 0.5, fy, 0.16, wh);
+      }
+    }
+  } else if (facade === 'glass') {
+    ctx.fillStyle = 'rgba(96,132,156,.85)';
+    ctx.fillRect(wallX0 + 0.4, wallTop + eaveM, wallW - 0.8, wallH - eaveM);
+    for (let x = wallX0 + 1.1; x < wallX1 - 0.6; x += 1.9) {
+      ctx.fillStyle = 'rgba(226,238,244,.45)';
+      ctx.fillRect(x, wallTop + eaveM, 0.2, wallH - eaveM);
+    }
+    for (let f = 1; f < floorsF; f++) {
+      ctx.fillStyle = 'rgba(190,206,216,.55)';
+      ctx.fillRect(wallX0 + 0.4, wallTop + eaveM + f * floorH - 0.2, wallW - 0.8, 0.26);
+    }
+    const gx = wallX0 + wallW * (0.2 + (seed % 5) * 0.12);
+    ctx.fillStyle = 'rgba(232,244,250,.55)';
+    ctx.fillRect(gx, wallTop + eaveM + floorH * 0.3, Math.min(3.4, wallW * 0.16), floorH * 0.5);
+  } else if (facade === 'shop') {
+    const shopH = Math.min(floorH * 1.15, wallH * 0.52);
+    const sy = bb[3] - shopH;
+    ctx.fillStyle = '#f0e6d0';
+    ctx.fillRect(wallX0, sy, wallW, shopH);
+    const units = Math.max(2, Math.round(wallW / 3.6));
+    const ug = wallW / units;
+    for (let i = 0; i < units; i++) {
+      const wx = wallX0 + i * ug + ug * 0.12;
+      ctx.fillStyle = night ? 'rgba(255,226,150,.9)' : 'rgba(92,124,146,.85)';
+      ctx.fillRect(wx, sy + shopH * 0.26, ug * 0.76, shopH * 0.58);
+      ctx.fillStyle = 'rgba(240,248,252,.35)';
+      ctx.fillRect(wx + ug * 0.08, sy + shopH * 0.3, ug * 0.24, shopH * 0.5);
+    }
+    const aw = wallW * 0.9, ax = wallX0 + wallW * 0.05;
+    ctx.fillStyle = '#b23a2a';
+    ctx.fillRect(ax, sy + shopH * 0.2, aw, Math.max(0.6, shopH * 0.1));
+    ctx.fillStyle = 'rgba(246,238,220,.9)';
+    for (let x = ax; x < ax + aw; x += 1.6) ctx.fillRect(x, sy + shopH * 0.2, 0.8, Math.max(0.6, shopH * 0.1));
+    ctx.fillStyle = '#8f3a24';
+    ctx.fillRect(ax, sy + shopH * 0.02, aw, Math.max(0.8, shopH * 0.14));
+    ctx.fillStyle = 'rgba(255,240,210,.85)';
+    for (let i = 0; i < 4; i++) ctx.fillRect(ax + 1 + i * 1.7, sy + shopH * 0.06, 1, Math.max(0.4, shopH * 0.06));
+    for (let f = 0; f < floorsF - 1; f++) {
+      const fy = wallTop + eaveM + f * floorH + floorH * 0.24;
+      for (let x = wallX0 + 1.4; x < wallX1 - 1.4; x += 3.2) {
+        ctx.fillStyle = night && rng() > 0.5 ? '#ffe9a8' : 'rgba(86,114,134,.7)';
+        ctx.fillRect(x, fy, 1.7, Math.min(1.5, floorH * 0.42));
+      }
+    }
+  } else if (facade === 'arch') {
+    ctx.fillStyle = 'rgba(150,74,52,.14)';
+    ctx.fillRect(wallX0, wallTop, wallW, wallH);
+    const cols = Math.max(2, Math.round(wallW / 3.4));
+    const gap = wallW / cols;
+    for (let f = 0; f < floorsF; f++) {
+      const fy = wallTop + eaveM + f * floorH + floorH * 0.2;
+      const wh = Math.min(2.1, floorH * 0.58);
+      for (let c = 0; c < cols; c++) {
+        const wx = wallX0 + c * gap + gap * 0.24, ww = gap * 0.52;
+        ctx.fillStyle = 'rgba(250,244,230,.9)';
+        ctx.fillRect(wx - 0.3, fy - 0.3, ww + 0.6, wh + 0.6);
+        ctx.fillStyle = night && rng() > 0.55 ? '#ffe9a8' : 'rgba(84,110,128,.8)';
+        ctx.fillRect(wx, fy, ww, wh);
+        ctx.fillStyle = 'rgba(250,244,230,.9)';
+        ctx.fillRect(wx - 0.3, fy - 0.3, ww + 0.6, 0.3);
+        ctx.fillRect(wx + ww * 0.35, fy - 0.7, ww * 0.3, 0.45);
+      }
+    }
+    ctx.fillStyle = 'rgba(252,246,232,.7)';
+    ctx.fillRect(wallX0, wallTop + eaveM, wallW, 0.3);
+  } else if (facade === 'banner') {
+    ctx.fillStyle = 'rgba(210,198,176,.3)';
+    ctx.fillRect(wallX0, wallTop, wallW, wallH);
+    const cols = Math.max(3, Math.round(wallW / 5));
+    const gap = wallW / (cols - 1 || 1);
+    ctx.fillStyle = 'rgba(255,250,236,.5)';
+    for (let i = 0; i < cols; i++) ctx.fillRect(wallX0 + i * gap - 0.3, wallTop + eaveM, 0.6, wallH - eaveM);
+    const wins = Math.max(1, Math.round(wallW / 7));
+    for (let i = 0; i < wins; i++) {
+      const wx = wallX0 + (i + 0.5) * (wallW / wins) - 1.1;
+      ctx.fillStyle = 'rgba(90,116,134,.7)';
+      ctx.fillRect(wx, wallTop + eaveM + floorH * 0.3, 2.2, floorH * 0.4);
+    }
+    const bw = Math.min(wallW * 0.42, 12), bx = wallX0 + (wallW - bw) / 2;
+    const bh = Math.min(1.6, wallH * 0.2), byy = wallTop + eaveM + wallH * 0.12;
+    ctx.fillStyle = '#b23a2a';
+    ctx.fillRect(bx, byy, bw, bh);
+    ctx.fillStyle = 'rgba(255,242,214,.9)';
+    for (let i = 0; i < 6; i++) {
+      ctx.fillRect(bx + 0.7 + i * (bw - 1.4) / 6, byy + bh * 0.25, (bw - 1.4) / 6 * 0.6, bh * 0.5);
+    }
+  } else {
+    const cols = Math.max(2, Math.round(wallW / 3.6));
+    const gap = wallW / cols;
+    for (let f = 0; f < floorsF; f++) {
+      const fy = wallTop + eaveM + f * floorH;
+      const railH = Math.min(0.9, floorH * 0.26);
+      for (let c = 0; c < cols; c++) {
+        const wx = wallX0 + c * gap + gap * 0.12, ww = gap * 0.76;
+        ctx.fillStyle = 'rgba(255,250,238,.5)';
+        ctx.fillRect(wx, fy + floorH - railH - 0.2, ww, railH);
+        ctx.fillStyle = 'rgba(120,104,82,.35)';
+        ctx.fillRect(wx, fy + floorH - 0.35, ww, 0.35);
+        const lit = night && rng() > 0.4;
+        ctx.fillStyle = lit ? '#ffe9a8' : 'rgba(86,114,134,.7)';
+        ctx.fillRect(wx + ww * 0.08, fy + floorH * 0.2, ww * 0.36, floorH * 0.46);
+        ctx.fillStyle = lit ? 'rgba(255,240,200,.5)' : 'rgba(120,90,70,.55)';
+        ctx.fillRect(wx + ww * 0.56, fy + floorH * 0.24, ww * 0.34, floorH * 0.42);
+        if (rng() > 0.72) {
+          ctx.fillStyle = ['#d98a6a', '#7f9ec4', '#c4b06a'][(rng() * 3) | 0];
+          ctx.fillRect(wx + ww * 0.2, fy + floorH - railH - 0.9, ww * 0.5, 0.7);
+        }
+      }
+    }
+  }
+
+  // 入口
+  if (wallW > 8 && facade !== 'glass' && facade !== 'shop') {
+    const dw = Math.min(5, wallW * 0.16);
+    const dh = Math.min(floorH * 0.8, 3.2);
+    const dx = wallX0 + (wallW - dw) / 2;
+    const dy = bb[3] - dh - Math.min(0.5, wallH * 0.06);
+    if (facade !== 'classic') {
+      ctx.fillStyle = 'rgba(40,34,26,.28)';
+      ctx.fillRect(dx - 1.2, dy - 0.5, dw + 2.4, 0.5);
+      ctx.fillStyle = '#e6dcc4';
+      ctx.fillRect(dx - 1.4, dy - 1.1, dw + 2.8, 0.7);
+    }
+    ctx.fillStyle = facade === 'classic' ? 'rgba(150,54,36,.95)' : 'rgba(52,54,50,.85)';
+    ctx.fillRect(dx, dy, dw, dh);
+    ctx.fillStyle = 'rgba(255,240,200,.2)';
+    ctx.fillRect(dx + dw * 0.12, dy + dh * 0.12, dw * 0.28, dh * 0.76);
+    ctx.fillRect(dx + dw * 0.56, dy + dh * 0.12, dw * 0.28, dh * 0.76);
+  }
+  ctx.restore();
+
+  // ---- 屋顶：盖在墙顶之上（向上平移 wallPx）----
+  ctx.save();
+  at(0, -wallPx);
+  ctx.fillStyle = roof;
+  ctx.fill(b._path, 'evenodd');
+  ctx.save();
+  ctx.clip(b._path, 'evenodd');
+  ctx.strokeStyle = roofDark;
+  ctx.lineWidth = 2.2;
+  ctx.stroke(b._path);
+  ctx.strokeStyle = mixHex(roof, '#fff6e6', 0.18);
+  ctx.lineWidth = 0.8;
+  ctx.stroke(b._path);
+  if (!flat) {
+    const s1 = bb[1] + h * 0.38, s2 = bb[1] + h * 0.66;
+    ctx.fillStyle = 'rgba(255,246,226,.13)';
+    ctx.fillRect(bb[0], bb[1], w, Math.max(0.6, s1 - bb[1]));
+    ctx.fillStyle = 'rgba(40,22,12,.10)';
+    ctx.fillRect(bb[0], s2, w, Math.max(0.6, bb[3] - s2));
+  }
+  const horiz = w >= h;
+  const midX = (bb[0] + bb[2]) / 2, midY = (bb[1] + bb[3]) / 2;
+  if (flat) {
+    ctx.strokeStyle = 'rgba(255,248,236,.28)';
+    ctx.lineWidth = 1;
+    ctx.stroke(b._path);
+    if (w > 26 || h > 26) {
+      ctx.fillStyle = 'rgba(58,64,60,.10)';
+      for (let x = bb[0] + 8; x < bb[2]; x += 8) ctx.fillRect(x, bb[1], 0.5, h);
+      for (let y = bb[1] + 8; y < bb[3]; y += 8) ctx.fillRect(bb[0], y, w, 0.5);
+    }
+    const n = Math.min(5, Math.max(1, Math.round(w * h / 700)));
+    for (let i = 0; i < n; i++) {
+      const uw = 1.8 + rng() * 2.6, uh = 1.6 + rng() * 2.2;
+      const ux = bb[0] + 2 + rng() * Math.max(1, w - uw - 4);
+      const uy = bb[1] + 2 + rng() * Math.max(1, h - uh - 4);
+      ctx.fillStyle = 'rgba(40,36,30,.3)';
+      ctx.fillRect(ux + 0.4, uy + 0.4, uw, uh);
+      ctx.fillStyle = roofDark;
+      ctx.fillRect(ux, uy, uw, uh);
+      ctx.fillStyle = 'rgba(255,248,232,.4)';
+      ctx.fillRect(ux, uy, uw, 0.5);
+    }
+  } else {
+    ctx.fillStyle = 'rgba(60,30,18,.12)';
+    if (horiz) for (let y = bb[1] + 1.4; y < bb[3]; y += 1.7) ctx.fillRect(bb[0], y, w, 0.26);
+    else for (let x = bb[0] + 1.4; x < bb[2]; x += 1.7) ctx.fillRect(x, bb[1], 0.26, h);
+    if (horiz) {
+      ctx.fillStyle = roofDark;
+      ctx.fillRect(bb[0], midY - 0.9, w, 1.8);
+      ctx.fillStyle = 'rgba(255,240,220,.25)';
+      ctx.fillRect(bb[0], midY - 0.9, w, 0.5);
+    } else {
+      ctx.fillStyle = roofDark;
+      ctx.fillRect(midX - 0.9, bb[1], 1.8, h);
+      ctx.fillStyle = 'rgba(255,240,220,.25)';
+      ctx.fillRect(midX - 0.9, bb[1], 0.5, h);
+    }
+  }
+  // 内院
+  for (const poly2 of b.polys) {
+    for (let hi = 1; hi < poly2.length; hi++) {
+      const ring = poly2[hi];
+      ctx.beginPath();
+      ctx.moveTo(ring[0], ring[1]);
+      for (let i = 2; i < ring.length; i += 2) ctx.lineTo(ring[i], ring[i + 1]);
+      ctx.closePath();
+      ctx.fillStyle = '#e6dcc4';
+      ctx.fill();
+      ctx.strokeStyle = roofDark;
+      ctx.lineWidth = 0.5;
+      ctx.stroke();
+    }
+  }
+  ctx.strokeStyle = 'rgba(28,22,18,.62)';
+  ctx.lineWidth = 0.75;
+  ctx.stroke(b._path);
+  ctx.restore();
+  ctx.restore();
