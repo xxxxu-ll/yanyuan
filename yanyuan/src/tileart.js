@@ -22,8 +22,8 @@ export function atlasReady() { return ready; }
 
 // 从 CC0 素材图里取的地面瓦片（列, 行）；同一类给多个变体，按坐标哈希挑选
 const GROUND = {
-  grass: [[13, 12], [15, 12], [11, 12], [14, 13]],
-  path: [[2, 17], [3, 17], [2, 18], [4, 18]],
+  grass: [[13, 12], [15, 12], [12, 12], [14, 12]],
+  path: [],
   water: [[11, 25], [13, 25], [12, 26]],
 };
 
@@ -32,8 +32,34 @@ function pickVariant(list, dx, dy) {
   return list[h % list.length];
 }
 
+/** 程序化石板路：低对比、2x2 石板 + 细缝 */
+export function drawPavingTile(ctx, dx, dy, px = TILE) {
+  const rng = mulberry32((dx * 374761393) ^ (dy * 668265263));
+  ctx.fillStyle = '#b9bdb0';
+  ctx.fillRect(dx, dy, px, px);
+  const half = px / 2;
+  for (let r = 0; r < 2; r++) {
+    for (let c = 0; c < 2; c++) {
+      const off = r ? half / 2 : 0;
+      const x = dx + c * half + (r ? -half / 2 : 0);
+      const k = 0.94 + rng() * 0.12;
+      ctx.fillStyle = `rgba(${Math.round(185 * k)},${Math.round(189 * k)},${Math.round(176 * k)},1)`;
+      ctx.fillRect(x, dy + r * half, half - 1, half - 1);
+      if (r === 1 && x + half > dx + px) {
+        ctx.fillRect(dx, dy + r * half, half / 2 - 1, half - 1);
+      }
+    }
+  }
+  ctx.fillStyle = 'rgba(120,124,114,.45)';
+  ctx.fillRect(dx, dy + half - 1, px, 1);
+  ctx.fillRect(dx + half - 1, dy, 1, half);
+  ctx.fillRect(dx, dy, px, 1);
+  ctx.fillRect(dx, dy, 1, px);
+}
+
 /** 画一格地面瓦片（素材未就绪时用程序化兜底） */
 export function drawGroundTile(ctx, kind, dx, dy, px = TILE) {
+  if (kind === 'path') { drawPavingTile(ctx, dx, dy, px); return true; }
   const list = GROUND[kind] || GROUND.grass;
   const [sx, sy] = pickVariant(list, dx, dy);
   if (ready) {
@@ -63,17 +89,21 @@ export function drawRoofTile(ctx, base, dx, dy, px = TILE, seed = 1) {
   const rng = mulberry32(seed * 977 + dx * 31 + dy * 17);
   ctx.fillStyle = base;
   ctx.fillRect(dx, dy, px, px);
-  const step = px / 4;
-  for (let i = 0; i < 4; i++) {
-    ctx.fillStyle = shade(base, i % 2 ? 0.92 : 0.97);
-    ctx.fillRect(dx, dy + i * step, px, step * 0.55);
-    ctx.fillStyle = shade(base, 0.78);
-    ctx.fillRect(dx, dy + i * step + step * 0.55, px, Math.max(1, step * 0.18));
-  }
-  // 抖色颗粒
-  for (let i = 0; i < 6; i++) {
-    ctx.fillStyle = rng() > 0.5 ? shade(base, 1.06) : shade(base, 0.9);
-    ctx.fillRect(dx + Math.floor(rng() * px), dy + Math.floor(rng() * px), 1, 1);
+  // 小瓦：2 列 x 4 行，错缝排列
+  const cw = px / 2, ch = px / 4;
+  for (let r = 0; r < 4; r++) {
+    for (let c = 0; c < 2; c++) {
+      const off = (r % 2) * cw * 0.5;
+      const x = dx + c * cw + (off > 0 ? -cw * 0.5 : 0);
+      ctx.fillStyle = shade(base, 0.94 + (rng() - 0.5) * 0.08);
+      ctx.fillRect(x, dy + r * ch, cw, ch * 0.86);
+      // 瓦头高光 + 缝
+      ctx.fillStyle = shade(base, 1.12);
+      ctx.fillRect(x, dy + r * ch, cw, Math.max(1, ch * 0.18));
+      ctx.fillStyle = shade(base, 0.72);
+      ctx.fillRect(x, dy + r * ch + ch * 0.86, cw, Math.max(1, ch * 0.14));
+      ctx.fillRect(x + cw - 1, dy + r * ch, 1, ch * 0.86);
+    }
   }
 }
 
@@ -87,42 +117,84 @@ export function drawRidgeTile(ctx, base, dx, dy, px = TILE) {
   ctx.fillRect(dx, dy + px * 0.74, px, px * 0.16);
 }
 
-/** 墙面图块（band=0 素墙 / 1 带窗 / 2 底层门窗 / 3 拱窗） */
+/** 墙面图块：band 0 素墙 / 1 方窗 / 2 门 / 3 拱窗 / 4 带窗 / 5 木格窗 / 6 橱窗 / 7 阳台 / 8 标语墙 */
 export function drawWallTile(ctx, wall, band, dx, dy, px = TILE, seed = 1) {
   const rng = mulberry32(seed * 613 + dx * 7 + dy * 13);
   ctx.fillStyle = wall;
   ctx.fillRect(dx, dy, px, px);
-  // 砖缝
-  ctx.fillStyle = 'rgba(120,96,72,.14)';
+  ctx.fillStyle = 'rgba(110,90,68,.13)';
   ctx.fillRect(dx, dy + px * 0.5, px, 1);
   ctx.fillRect(dx + px * (rng() > 0.5 ? 0.25 : 0.6), dy, 1, px * 0.5);
-  if (band === 1) {
-    // 窗
-    ctx.fillStyle = '#5c7a8c';
-    ctx.fillRect(dx + px * 0.18, dy + px * 0.22, px * 0.64, px * 0.46);
-    ctx.fillStyle = '#9fc4d6';
-    ctx.fillRect(dx + px * 0.2, dy + px * 0.24, px * 0.26, px * 0.4);
-    ctx.fillStyle = '#e8e2d2';
-    ctx.fillRect(dx + px * 0.14, dy + px * 0.68, px * 0.72, px * 0.1);
-  } else if (band === 2) {
-    // 底层：门洞 + 窗
+  const glass = '#587586', glassLit = '#9fc4d6', trim = '#ece6d6';
+
+  if (band === 1) {                       // 方窗
+    ctx.fillStyle = glass;
+    ctx.fillRect(dx + px * 0.2, dy + px * 0.24, px * 0.6, px * 0.42);
+    ctx.fillStyle = glassLit;
+    ctx.fillRect(dx + px * 0.23, dy + px * 0.27, px * 0.22, px * 0.34);
+    ctx.fillStyle = trim;
+    ctx.fillRect(dx + px * 0.16, dy + px * 0.66, px * 0.68, px * 0.09);
+  } else if (band === 2) {                // 门
     ctx.fillStyle = '#4a4a44';
-    ctx.fillRect(dx + px * 0.24, dy + px * 0.24, px * 0.52, px * 0.64);
-    ctx.fillStyle = 'rgba(255,240,200,.25)';
-    ctx.fillRect(dx + px * 0.28, dy + px * 0.3, px * 0.18, px * 0.52);
-    ctx.fillStyle = '#e8e2d2';
-    ctx.fillRect(dx + px * 0.2, dy + px * 0.18, px * 0.6, px * 0.08);
-  } else if (band === 3) {
-    // 拱窗
-    ctx.fillStyle = '#e8e2d2';
-    ctx.fillRect(dx + px * 0.18, dy + px * 0.18, px * 0.64, px * 0.6);
-    ctx.fillStyle = '#5c7a8c';
-    ctx.fillRect(dx + px * 0.24, dy + px * 0.26, px * 0.52, px * 0.5);
-    ctx.fillStyle = '#e8e2d2';
-    ctx.fillRect(dx + px * 0.3, dy + px * 0.14, px * 0.4, px * 0.1);
+    ctx.fillRect(dx + px * 0.26, dy + px * 0.2, px * 0.48, px * 0.7);
+    ctx.fillStyle = 'rgba(255,240,200,.22)';
+    ctx.fillRect(dx + px * 0.3, dy + px * 0.26, px * 0.16, px * 0.56);
+    ctx.fillStyle = trim;
+    ctx.fillRect(dx + px * 0.2, dy + px * 0.12, px * 0.6, px * 0.1);
+  } else if (band === 3) {                // 拱窗
+    ctx.fillStyle = trim;
+    ctx.fillRect(dx + px * 0.16, dy + px * 0.2, px * 0.68, px * 0.62);
+    ctx.fillStyle = glass;
+    ctx.fillRect(dx + px * 0.22, dy + px * 0.28, px * 0.56, px * 0.5);
+    ctx.fillStyle = trim;
+    ctx.fillRect(dx + px * 0.3, dy + px * 0.16, px * 0.4, px * 0.09);
+    ctx.fillStyle = glassLit;
+    ctx.fillRect(dx + px * 0.26, dy + px * 0.32, px * 0.16, px * 0.4);
+  } else if (band === 4) {                // 连续带窗
+    ctx.fillStyle = glass;
+    ctx.fillRect(dx, dy + px * 0.26, px, px * 0.38);
+    ctx.fillStyle = glassLit;
+    ctx.fillRect(dx, dy + px * 0.3, px * 0.34, px * 0.3);
+    ctx.fillStyle = trim;
+    ctx.fillRect(dx, dy + px * 0.64, px, px * 0.07);
+    ctx.fillRect(dx + px * 0.5, dy + px * 0.26, 1, px * 0.38);
+  } else if (band === 5) {                // 木格窗
+    ctx.fillStyle = '#7a5340';
+    ctx.fillRect(dx + px * 0.18, dy + px * 0.22, px * 0.64, px * 0.5);
+    ctx.fillStyle = '#3f3126';
+    for (let i = 0; i < 3; i++) ctx.fillRect(dx + px * (0.2 + i * 0.21), dy + px * 0.24, 1, px * 0.46);
+    for (let i = 0; i < 2; i++) ctx.fillRect(dx + px * 0.18, dy + px * (0.34 + i * 0.18), px * 0.64, 1);
+    ctx.fillStyle = trim;
+    ctx.fillRect(dx + px * 0.14, dy + px * 0.72, px * 0.72, px * 0.08);
+  } else if (band === 6) {                // 橱窗 + 雨篷
+    ctx.fillStyle = '#f0e6d0';
+    ctx.fillRect(dx, dy + px * 0.22, px, px * 0.78);
+    ctx.fillStyle = glassLit;
+    ctx.fillRect(dx + px * 0.1, dy + px * 0.38, px * 0.8, px * 0.46);
+    ctx.fillStyle = '#b23a2a';
+    ctx.fillRect(dx, dy + px * 0.2, px, px * 0.16);
+    ctx.fillStyle = 'rgba(246,238,220,.9)';
+    for (let x = 0; x < px; x += px * 0.25) ctx.fillRect(dx + x, dy + px * 0.2, px * 0.12, px * 0.16);
+    ctx.fillStyle = '#8f3a24';
+    ctx.fillRect(dx + px * 0.1, dy + px * 0.04, px * 0.8, px * 0.12);
+  } else if (band === 7) {                // 阳台
+    ctx.fillStyle = glass;
+    ctx.fillRect(dx + px * 0.2, dy + px * 0.18, px * 0.6, px * 0.4);
+    ctx.fillStyle = 'rgba(255,250,238,.85)';
+    ctx.fillRect(dx + px * 0.08, dy + px * 0.58, px * 0.84, px * 0.16);
+    ctx.fillStyle = 'rgba(120,104,82,.45)';
+    ctx.fillRect(dx + px * 0.08, dy + px * 0.74, px * 0.84, 1);
+    ctx.fillStyle = 'rgba(150,120,90,.5)';
+    ctx.fillRect(dx + px * 0.08, dy + px * 0.42, 1, px * 0.16);
+  } else if (band === 8) {                // 标语墙
+    ctx.fillStyle = 'rgba(255,250,236,.55)';
+    ctx.fillRect(dx + px * 0.3, dy, px * 0.1, px);
+    ctx.fillStyle = '#b23a2a';
+    ctx.fillRect(dx + px * 0.42, dy + px * 0.28, px * 0.5, px * 0.3);
+    ctx.fillStyle = 'rgba(255,244,216,.9)';
+    for (let i = 0; i < 3; i++) ctx.fillRect(dx + px * (0.46 + i * 0.15), dy + px * 0.34, px * 0.08, px * 0.18);
   }
-  // 墙脚
-  ctx.fillStyle = 'rgba(60,44,30,.18)';
+  ctx.fillStyle = 'rgba(60,44,30,.16)';
   ctx.fillRect(dx, dy + px - 1, px, 1);
 }
 
