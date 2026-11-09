@@ -1,7 +1,8 @@
 // 游戏主循环：移动、碰撞、镜头、多人同步、互动、地图、拍照
-import { Camera, Ground, drawBuilding, drawLandmark, drawTree, drawWaterAnim, drawTint, drawLabel, drawNightLights, UPSCALE } from './render.js';
+import { Camera, Ground, drawBuilding, drawLandmark, drawTree, drawHeritage, drawWaterAnim, drawTint, drawLabel, drawNightLights, UPSCALE } from './render.js';
 import { getCharacterSheet, drawCharacter, getCatSheet, drawCat, drawNameTag } from './sprites.js';
 import { CAT_DEFS, Cat, AFF, affinityLabel, catAwake } from './cats.js';
+import { heritageText } from './heritage.js';
 import {
   normalizeProgress, discoverNearby, evaluateAchievements, exploreCount,
   catState, bumpCat, setCatFollowing, addItem, ProgressStore,
@@ -743,6 +744,10 @@ export class Game {
       if (c.x < view[0] - 2 || c.x > view[2] + 2 || c.y < view[1] - 2 || c.y > view[3] + 2) continue;
       items.push({ y: c.y, k: 'c', o: c });
     }
+    for (const h of this.world.heritage) {
+      if (h.x < view[0] - 3 || h.x > view[2] + 3 || h.y < view[1] - 3 || h.y > view[3] + 3) continue;
+      items.push({ y: h.y, k: 'h', o: h });
+    }
     for (const r of this.remotes.values()) {
       if (r.x < view[0] - 2 || r.x > view[2] + 2 || r.y < view[1] - 2 || r.y > view[3] + 2) continue;
       items.push({ y: r.y, k: 'r', o: r });
@@ -758,6 +763,7 @@ export class Game {
         if (kind) drawLandmark(g, it.o, cam, hour, kind);
         else drawBuilding(g, it.o, cam, hour);
       } else if (it.k === 't') drawTree(g, it.o, cam);
+      else if (it.k === 'h') drawHeritage(g, it.o, cam);
       else if (it.k === 'c') this.drawCatEntity(g, it.o);
       else if (it.k === 'r') this.drawRemote(g, it.o);
       else this.drawSelf(g);
@@ -818,8 +824,7 @@ export class Game {
     for (const h of this.world.heritage) {
       const x = Math.round(cam.sx(h.x)), y = Math.round(cam.sy(h.y));
       if (x < -8 || y < -8 || x > cam.w + 8 || y > cam.h + 8) continue;
-      ctx.fillStyle = '#d8a94e';
-      ctx.fillRect(x - 1, y - 1, 2, 2);
+
       if (dist(h.x, h.y, cam.x, cam.y) < 20) {
         cam.label(h.name, h.x, h.y - 1.2, 10, '#f6e2a8', 0.75);
       }
